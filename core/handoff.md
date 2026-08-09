@@ -19,7 +19,8 @@ plus after core work, at long-task checkpoints, and for user status requests.
 Pre-final applies even when the current user question is unrelated to Crew.
 Each sweep:
 
-1. selects only registered, non-archived workers by stable ID;
+1. selects registered, non-archived workers with active assignments by stable
+   ID; an idle registry completes with zero task-tool calls;
 2. recovers durable reports that have no event;
 3. fixes an event high-water mark;
 4. reads each worker after its independent cursor until no revision through the
@@ -29,10 +30,12 @@ Each sweep:
 6. records the idempotency key and advances the cursor only after success; and
 7. acknowledges delivery only after the report is consumed.
 
-Use `timeoutMs=0` or an equivalent snapshot for thread-backed adapters.
-Multi-target wait returns a first change and cannot replace this drain. No
-change is completely silent. A degraded or failed scan is recorded and blocks
-Dock or Launch when freshness matters.
+Use `timeoutMs=0` or an equivalent snapshot for thread-backed adapters. Try one
+batch, then query only targets not evidenced in that response. The Hook records
+actual target coverage against the current `turn_id`; a local mailbox sweep
+alone cannot pass the gate. No change is completely silent. A degraded,
+over-budget, or failed scan records unknown freshness and blocks Dock or Launch
+when freshness matters.
 
 If Pre-final changes a user-relevant conclusion, update the answer once and
 finish; do not recurse indefinitely. The raw report remains in the worker

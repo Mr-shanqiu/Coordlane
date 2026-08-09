@@ -50,10 +50,13 @@ build report -> atomic durable write -> digest -> event -> one-shot wake
 -> integrate or revise -> close and release
 ```
 
-A full sweep scans every registered, non-archived worker independently, using
-its stored cursor. It first recovers durable reports that lack events, fixes an
-event high-water mark, then drains each worker through that boundary. A
-multi-target wait is only a latency optimization for the first change.
+A live sweep covers every registered, non-archived worker with an active
+assignment, using its stored cursor. `PostToolUse(wait_threads)` binds observed
+stable addresses to the current `turn_id`; draining the local mailbox alone is
+not sufficient. One batched zero-time snapshot is attempted first, followed by
+only the targets absent from that response. The mailbox pass recovers durable
+reports that lack events, repairs the event high-water mark, and drains each
+worker through that boundary.
 
 ## Safe points
 
@@ -68,9 +71,11 @@ sees curated outcomes, risk, validation status, integration status, next step,
 and decisions—not raw Crew reports.
 
 The finalizer enforces this mechanically. `beginTurn` invalidates the previous
-pass; `preFinalGate` runs a bounded registry-wide sweep and records freshness;
-`assertFinalizable` rejects output if the gate is missing, stale, unknown, or
-has unread terminal revisions. Topic relevance never bypasses this guard.
+pass and records the active registry revision; tool Hooks attest entry and
+pre-final live snapshots; `preFinalGate` drains durable events; and
+`assertFinalizable` rejects output if either live attestation or mailbox gate is
+missing, stale, unknown, over budget, or has unread terminal revisions. Topic
+relevance never bypasses this guard.
 
 ## Two reliability domains
 
@@ -92,6 +97,12 @@ and external side effects. It stores no transcript or secret and performs no
 automatic merge, deployment, migration, or release. Per-assignment token, CPU,
 network, and external-call budgets are part of preflight.
 
+Task snapshot cost is bounded. No active assignment produces no snapshot calls.
+There is no scheduled polling, and the Hook refuses observations after the
+per-turn call budget instead of silently spending more quota.
+
 The runnable filesystem reference is documented in
-[`../reference/README.md`](../reference/README.md). Its atomic rename is safe
-for one local writer per record; it is not a distributed transaction service.
+[`../reference/README.md`](../reference/README.md). Git projects keep state in
+their Git common directory so worktrees share one private local store. Critical
+multi-file changes use a bounded cross-process lock, but the store is still a
+same-user trust boundary rather than a distributed or hostile-process service.

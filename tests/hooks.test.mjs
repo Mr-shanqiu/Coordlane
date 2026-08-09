@@ -169,7 +169,14 @@ try {
     stop_hook_active: true
   });
   assert.equal(allowed.continue, true);
+  assert.equal(preFinalGate(normal).final_gate_passed, false);
 
+  runHook(normal, {
+    hook_event_name: "UserPromptSubmit",
+    session_id: "captain-thread",
+    turn_id: "captain-turn-1",
+    cwd: "/tmp/coordlane-fictional"
+  });
   const captainBlocked = runHook(normal, {
     hook_event_name: "Stop",
     session_id: "captain-thread",
@@ -178,6 +185,23 @@ try {
   });
   assert.equal(captainBlocked.decision, "block");
   assert.match(captainBlocked.reason, /Pre-final sweep/);
+  for (let index = 0; index < 2; index += 1) {
+    runHook(normal, {
+      hook_event_name: "PostToolUse",
+      session_id: "captain-thread",
+      turn_id: "captain-turn-1",
+      cwd: "/tmp/coordlane-fictional",
+      tool_name: "wait_threads",
+      tool_use_id: `wait-${index}`,
+      tool_input: {
+        timeoutMs: 0,
+        targets: [{ threadId: "worker-thread", hostId: "host-local", afterCursor: null }]
+      },
+      tool_response: {
+        snapshots: [{ threadId: "worker-thread", changed: false, cursor: `cursor-${index}` }]
+      }
+    });
+  }
   assert.equal(preFinalGate(normal).final_gate_passed, true);
   const captainAllowed = runHook(normal, {
     hook_event_name: "Stop",
@@ -189,6 +213,7 @@ try {
   runHook(normal, {
     hook_event_name: "UserPromptSubmit",
     session_id: "captain-thread",
+    turn_id: "captain-turn-2",
     cwd: "/tmp/coordlane-fictional"
   });
   const invalidated = runHook(normal, {

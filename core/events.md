@@ -24,8 +24,9 @@ The complete schema is [`../schemas/event.schema.json`](../schemas/event.schema.
 4. Compute and record its digest.
 5. Emit an idempotent notification event.
 6. Send one pure worker identifier to the bound Captain task.
-7. Record the matching transport receipt; then return the same report to the
-   worker session.
+7. Record a structured transport-issued receipt; a plain-text result or local
+   tool-call ID proves only an attempt. Then return the same report to the worker
+   session.
 
 The reviewed plugin `Stop` Hook enforces this order, and `PostToolUse` records a
 matching send receipt. A plain numeric wake without a durable revision and

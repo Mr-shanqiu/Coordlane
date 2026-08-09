@@ -27,6 +27,7 @@ import {
   recordDelivery,
   recordExternalAssignment,
   recordNotificationFailure,
+  recordSweepObservation,
   renameWorkerTitle,
   requestRevision,
   resumeRevision,
@@ -356,10 +357,21 @@ test("incident: pre-final gate ingests four completions during an unrelated answ
     addWorker(root, worker);
     start(root, worker, `ordinary-${worker}`);
   }
-  beginTurn(root);
+  beginTurn(root, { turn_id: "turn-four-completions" });
   for (const worker of ["30", "35", "40", "50"]) {
     const report = persist(root, worker, `ordinary-${worker}`);
     notify(root, report);
+  }
+  const observedWorkers = ["30", "35", "40", "50"].map((workerId) => {
+    const worker = readWorker(root, workerId);
+    return { worker_id: worker.worker_id, thread_id: worker.thread_id, host_id: worker.host_id };
+  });
+  for (let index = 0; index < 2; index += 1) {
+    recordSweepObservation(root, {
+      turn_id: "turn-four-completions",
+      timeout_ms: 0,
+      observed_workers: observedWorkers
+    });
   }
   assert.throws(() => assertFinalizable(root), /Finalization refused/);
   const gate = preFinalGate(root, { batch_size: 2 });
@@ -380,6 +392,39 @@ test("incident: unavailable scan marks freshness unknown and refuses final", () 
   assert.equal(gate.freshness, "unknown");
   assert.equal(gate.final_gate_passed, false);
   assert.throws(() => assertFinalizable(root), /freshness=unknown/);
+});
+
+test("quota: an idle registry passes both gates without task snapshot calls", () => {
+  const root = makeRoot();
+  addWorker(root);
+  const turn = beginTurn(root, { turn_id: "idle-turn" });
+  assert.equal(turn.turn_gate.required_workers.length, 0);
+  assert.equal(turn.turn_gate.snapshot_tool_calls, 0);
+  assert.ok(turn.turn_gate.entry_sweep.completed_at);
+  assert.ok(turn.turn_gate.pre_final_sweep.completed_at);
+  const gate = preFinalGate(root);
+  assert.equal(gate.final_gate_passed, true);
+  assert.equal(assertFinalizable(root).allowed, true);
+});
+
+test("quota: repeated empty snapshots stop at the per-turn budget", () => {
+  const root = makeRoot();
+  addWorker(root);
+  start(root, "20", "budgeted-scan");
+  const turn = beginTurn(root, { turn_id: "budget-turn" });
+  let result;
+  for (let index = 0; index <= turn.turn_gate.max_snapshot_tool_calls; index += 1) {
+    result = recordSweepObservation(root, {
+      turn_id: "budget-turn",
+      timeout_ms: 0,
+      observed_workers: []
+    });
+  }
+  assert.equal(result.budget_exhausted, true);
+  const gate = preFinalGate(root);
+  assert.equal(gate.final_gate_passed, false);
+  assert.equal(gate.freshness, "unknown");
+  assert.throws(() => assertFinalizable(root), /Finalization refused/);
 });
 
 test("liveness: a missing one-shot receipt remains recoverable at the next full sweep", () => {

@@ -7,6 +7,30 @@
   "last_sweep_cursor": 1,
   "unread_terminal_count": 0,
   "final_gate_passed": true,
+  "turn_gate": {
+    "turn_id": "turn-01",
+    "registry_revision": 1,
+    "required_workers": [
+      {"worker_id": "20", "thread_id": "thread-20", "host_id": "local"}
+    ],
+    "entry_sweep": {
+      "observed_workers": [
+        {"worker_id": "20", "thread_id": "thread-20", "host_id": "local"}
+      ],
+      "completed_at": "2026-08-09T00:00:30.000Z"
+    },
+    "pre_final_sweep": {
+      "observed_workers": [
+        {"worker_id": "20", "thread_id": "thread-20", "host_id": "local"}
+      ],
+      "completed_at": "2026-08-09T00:01:00.000Z"
+    },
+    "snapshot_tool_calls": 2,
+    "max_snapshot_tool_calls": 4,
+    "budget_exhausted": false,
+    "registry_changed": false,
+    "started_at": "2026-08-09T00:00:00.000Z"
+  },
   "workers": [
     {
       "worker_id": "20",

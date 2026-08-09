@@ -21,8 +21,8 @@ Coordlane 是一个本地优先的 Codex 插件，用一个 Captain 主控
 - 终态报告先持久化，再以 revision 和 digest 绑定通知。
 - 经过用户审阅的 `Stop` Hook 会在 Crew 正常结束前强制检查终态证据和一次性
   Captain 通知。
-- 在回合开始和回复前执行全量排空扫描，即使编号通知丢失、过早或 final 后
-  无法发送，也能发现结果。
+- 通过 `PostToolUse(wait_threads)` 记录回合开始和回复前真实发生的零等待任务
+  快照，不再只相信本地台账声称“已经扫描”。
 - 可执行 finalizer 会拒绝缺少本回合全 registry 扫描、freshness 未知或仍有
   未读终态结果的 final 输出。
 - Crew 自报测试与 Captain 独立复验分开。
@@ -48,7 +48,7 @@ Coordlane 是一个本地优先的 Codex 插件，用一个 Captain 主控
 - 7 个机器可读 [Schema](schemas/)；
 - Node.js 标准库实现的[文件状态仓参考](reference/README.md)；
 - 当前宿主的 [Codex desktop 适配器](adapters/codex/README.md)；
-- 15 个真实失败场景测试，以及 Schema、格式、链接、样例安全和适配契约检查。
+- 15 个真实失败场景，以及 worktree、伪回执、身份冲突、额度和并发写入对抗测试。
 
 本项目不提供服务器、daemon、定时心跳、遥测、对话保存、密钥处理、自动
 合并、自动迁移、自动部署、自动发布或运行开关切换。插件 Hook 只有在用户
@@ -57,6 +57,10 @@ Coordlane 是一个本地优先的 Codex 插件，用一个 Captain 主控
 回合扫描解决 active-turn consistency；主控休眠期间由 Crew 在 durable event
 形成后发送一次通知。若传输失败，事件继续保持 pending，由 Captain 下次回合
 恢复，不进行持续轮询，也不把降级状态称为实时汇报。
+
+每回合扫描成本有明确上限：没有活跃 assignment 时不调用任务快照；有活跃
+Crew 时先尝试一次 `timeoutMs=0` 批量快照，只补扫返回中缺失的目标。无变化时
+保持静默，也不重复读取完整报告。
 
 ## 快速开始
 
@@ -76,10 +80,10 @@ python3 /path/to/plugin-creator/scripts/validate_plugin.py .
 文件状态仓示例：
 
 ```sh
-node reference/coordlane.mjs init .coordlane fictional-library
-node reference/coordlane.mjs bind-captain .coordlane captain-thread local
-node reference/coordlane.mjs status .coordlane
-node reference/coordlane.mjs sweep .coordlane
+node reference/coordlane.mjs init-repo . fictional-library
+STATE_DIR="$(node reference/coordlane.mjs state-path .)"
+node reference/coordlane.mjs bind-captain "$STATE_DIR" captain-thread local
+node reference/coordlane.mjs status "$STATE_DIR"
 ```
 
 ## Codex 可靠性规则
@@ -90,8 +94,8 @@ cursor 和归档能力。Coordlane 按带生命周期 Hook 的 Level 2 运行：
 1. 使用 `assignment_id` 派发；
 2. 读取目标任务，确认 ACK 闭环；
 3. 每个已登记且未归档的 Crew 独立保存 cursor；
-4. 在 turn-entry 和 pre-final 执行非阻塞全量扫描；
-5. 多目标 wait 只用于发现第一个变化，不能代替 full sweep；
+4. 由 Hook 验证 turn-entry 和 pre-final 确实执行了 `wait_threads` 零等待快照；
+5. 为节省额度先批量调用，只对返回中缺失的目标做单独补扫；
 6. 只消费已持久化且 revision、digest 匹配的报告；
 7. durable report/event 形成后才允许发送一次纯编号；
 8. `PostToolUse` 记录投递，`Stop` 强制终态门禁；
@@ -104,8 +108,9 @@ Pre-final 门禁适用于每一次回答，即使本轮问题与 Crew 无关。�
 
 协议、文件状态仓、Schema 和失败场景模拟已经可以在本地运行。经过授权的
 Codex projectless 实测已通过稳定身份、创建、投递与 ACK 分离、首变化 wait、
-逐任务 cursor 排空、无变化抑制、结构化 final 和归档。worktree 与加密持久
-报告仍未通过。详见[验收记录](docs/testing/codex-live-acceptance-2026-08-09.md)
+逐任务 cursor 排空、无变化抑制、结构化 final 和归档。共享 worktree 状态和
+并发文件写入已有本地回归测试；真实 Hook 信任与工具响应验收仍待完成。详见
+[验收记录](docs/testing/codex-live-acceptance-2026-08-09.md)
 和[自审](docs/self-audit.md)。
 
 本阶段不创建 GitHub Release，也不创建或更新外部 PR。早期 Agent Captain

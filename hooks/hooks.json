@@ -15,7 +15,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "^send_message_to_thread$",
+        "matcher": "^(send_message_to_thread|wait_threads)$",
         "hooks": [
           {
             "type": "command",

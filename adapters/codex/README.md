@@ -24,7 +24,7 @@ current-host evidence and must be rechecked after host changes.
 | `emit_event` | Local digest-bound event after a durable report | Required before the Crew can stop |
 | `deliver_notification` | `send_message_to_thread` once with the pure `worker_id` | Transport hint; never report truth |
 | `enforce_terminal_gate` | Plugin `Stop` Hook | Refuses a normal stop until report/event and delivery evidence exist |
-| `record_delivery_receipt` | Plugin `PostToolUse` for `send_message_to_thread` | Records only a matching Captain target and pure worker ID |
+| `record_delivery_receipt` | Plugin `PostToolUse` for `send_message_to_thread` | Requires a matching Captain target, pure worker ID, and structured transport receipt |
 | `scan_events` | per-task `wait_threads(timeoutMs=0, afterCursor)` or changed `read_thread` snapshot | Iterate every registered task and retain each cursor |
 | `ack_event` | Captain consumption ledger | Only after digest/identity verification and report consumption |
 | `archive_worker` | `set_thread_archived` after assignment close and event drain | Never archive active work |
@@ -72,15 +72,22 @@ search by fuzzy title to route a message.
 Run at turn entry, after core work, pre-final, long-task checkpoints, and user
 status requests:
 
-1. snapshot the registered, non-archived task set;
+1. snapshot registered, non-archived tasks with active assignments; an idle
+   registry completes both gates without task-tool calls;
 2. recover any durable report without an event;
-3. for each task, call the non-blocking task snapshot with its own cursor;
+3. call one batched non-blocking snapshot first, then query only targets absent
+   from that response with their own cursors;
 4. if changed, read only the new terminal turn/report and validate its stable
    assignment identity;
 5. repeat that task until no unconsumed revision remains through the sweep's
    high-water boundary;
 6. persist the new cursor only after successful consumption; and
 7. stay silent when the entire sweep is unchanged.
+
+The `PostToolUse(wait_threads)` Hook records which stable task addresses were
+actually present in each snapshot result for the active `turn_id`. Both entry
+and pre-final coverage are required; draining only local mailbox files cannot
+pass the finalizer. A per-turn call budget prevents polling loops.
 
 At user-turn entry, invalidate `final_gate_passed`. Immediately before final,
 run the registry-wide sweep even for an unrelated question. A wrapper or host
@@ -102,7 +109,7 @@ The Crew producer order is:
 1. persist the terminal report atomically;
 2. emit the digest-bound event;
 3. send one pure `worker_id` to the bound Captain task;
-4. let `PostToolUse` record the matching delivery receipt; and
+4. let `PostToolUse` record a structured transport-issued delivery receipt; and
 5. let `Stop` verify the evidence before final output.
 
 If the Crew omitted a step, `Stop` creates one continuation prompt. A second
@@ -128,6 +135,11 @@ If stable IDs, cursors, or bounded snapshots are unavailable, downgrade to
 Level 3 filesystem mailbox. If the filesystem store is unavailable, downgrade
 to Level 4 manual coordination. Plugin Hooks remain disabled until the user
 reviews and trusts their exact definitions.
+
+For Git projects, initialize state once with `init-repo`. The store lives under
+the Git common directory, so linked worktrees share it without copying an
+ignored workspace folder. The filesystem remains a same-user trust boundary,
+not protection against a hostile process running as that user.
 
 ## Evidence
 

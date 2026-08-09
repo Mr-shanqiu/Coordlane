@@ -24,8 +24,8 @@ directories are deferred research notes, not support claims.
 - Terminal reports are revisioned, digest-bound, and durable before events.
 - A reviewed `Stop` Hook requires terminal evidence and a one-shot Captain
   notification before a Crew can finish normally.
-- Turn-entry and pre-final full sweeps discover results even when wake messages
-  are lost, early, or impossible after final output.
+- `PostToolUse(wait_threads)` records actual zero-time task snapshots for both
+  turn-entry and pre-final instead of trusting a local ledger claim alone.
 - An executable finalizer refuses an answer when the current turn lacks a fresh
   registry-wide Pre-final sweep or terminal results remain unread.
 - Captain verification is separate from worker-reported tests.
@@ -56,8 +56,8 @@ Read the [architecture](docs/architecture.md),
 - seven machine-readable [`schemas/`](schemas/);
 - a Node.js standard-library [filesystem reference](reference/README.md);
 - a current-host [Codex desktop adapter](adapters/codex/README.md); and
-- 15 executable failure-scenario tests plus schema, formatting, link, sample
-  safety, and adapter-contract checks.
+- 15 executable failure scenarios plus adversarial worktree, receipt, identity,
+  quota, and concurrent-writer regression checks.
 
 Coordlane ships no server, daemon, scheduled heartbeat, telemetry, transcript
 store, secret handler, automatic merge, deployment, migration, release, or
@@ -68,6 +68,11 @@ Turn scans provide active-turn consistency. Sleeping liveness uses a one-shot
 Crew notification after its durable event exists. If delivery fails, the event
 remains pending and the next Captain turn recovers it; Coordlane does not spend
 quota on recurring polling or describe degraded delivery as real-time.
+
+Snapshot cost is bounded per turn. No active assignment means zero task-snapshot
+calls. With active Crew, Coordlane tries one batched `timeoutMs=0` snapshot and
+only asks for missing targets individually; unchanged results stay silent and
+full reports are not reread.
 
 ## Quick start
 
@@ -89,10 +94,10 @@ Crew with a completed [`templates/crew-prompt.md`](templates/crew-prompt.md).
 Use the filesystem model locally:
 
 ```sh
-node reference/coordlane.mjs init .coordlane fictional-library
-node reference/coordlane.mjs bind-captain .coordlane captain-thread local
-node reference/coordlane.mjs status .coordlane
-node reference/coordlane.mjs sweep .coordlane
+node reference/coordlane.mjs init-repo . fictional-library
+STATE_DIR="$(node reference/coordlane.mjs state-path .)"
+node reference/coordlane.mjs bind-captain "$STATE_DIR" captain-thread local
+node reference/coordlane.mjs status "$STATE_DIR"
 ```
 
 ## Codex reliability rules
@@ -104,8 +109,9 @@ orchestration with reviewed lifecycle Hooks:
 1. dispatch with an `assignment_id`;
 2. verify target acknowledgement by reading the task;
 3. maintain one cursor per registered, non-archived Crew;
-4. run non-blocking full sweeps at turn entry and pre-final;
-5. treat multi-target wait as first-change latency optimization only;
+4. let the Hook attest actual non-blocking `wait_threads` snapshots at turn entry
+   and pre-final; a local event sweep alone cannot pass the finalizer;
+5. try one batch for cost control, then scan only targets absent from its result;
 6. consume only durable, matching report revisions; and
 7. require durable report/event before a one-shot pure numeric wake;
 8. use `PostToolUse` to record delivery and `Stop` to enforce the terminal
@@ -121,8 +127,9 @@ task state is synchronized.
 The protocol, reference store, schemas, and simulated failure tests are
 runnable locally. An authorized projectless Codex acceptance passed stable
 identity, create, delivery/ACK separation, first-change wait, per-task cursor
-drain, unchanged suppression, structured final, and archive. Worktree and
-cryptographic durable-report checks remain open. See the
+drain, unchanged suppression, structured final, and archive. Shared worktree
+state and concurrent filesystem writers now have local regression coverage;
+live Hook trust and tool-response acceptance remain open. See the
 [acceptance record](docs/testing/codex-live-acceptance-2026-08-09.md) and
 [self-audit](docs/self-audit.md).
 

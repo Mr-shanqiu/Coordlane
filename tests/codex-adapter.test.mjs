@@ -36,6 +36,9 @@ assert.equal(manifest.invariants.multi_target_wait_is_full_sweep, false);
 assert.equal(manifest.invariants.raw_report_in_user_chat, false);
 assert.equal(manifest.invariants.numeric_wake_is_truth, false);
 assert.equal(manifest.invariants.scheduled_heartbeat_enabled, false);
+assert.equal(manifest.invariants.idle_registry_snapshot_calls, 0);
+assert.equal(manifest.invariants.snapshot_call_budget_enforced, true);
+assert.equal(manifest.invariants.shared_worktree_state, "git_common_directory");
 assert.equal(manifest.invariants.standalone_skill_install, false);
 
 const codexReadme = fs.readFileSync("adapters/codex/README.md", "utf8");
@@ -66,6 +69,7 @@ assert.equal(fs.existsSync("hooks/hooks.json"), true);
 const hooks = JSON.parse(fs.readFileSync("hooks/hooks.json", "utf8"));
 assert.ok(hooks.hooks.Stop);
 assert.ok(hooks.hooks.PostToolUse);
+assert.match(hooks.hooks.PostToolUse[0].matcher, /wait_threads/);
 assert.ok(hooks.hooks.UserPromptSubmit);
 
 for (const adapter of ["claude-code", "codebuddy", "workbuddy", "generic"]) {

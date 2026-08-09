@@ -7,8 +7,9 @@ description: Coordinate complex Codex work across multiple tasks with one Captai
 
 Act as the Captain unless the user explicitly assigns a Crew role. Keep
 coordination truth in explicit state, not in session titles or chat memory.
-Use the repository-root `.coordlane/` state directory so bundled Hooks can
-discover it; use `COORDLANE_STATE_DIR` only for an explicit alternate path.
+Use the shared state under the repository Git common directory so every
+worktree resolves the same store. Use `COORDLANE_STATE_DIR` only for an explicit
+alternate path; an explicitly configured missing store must fail closed.
 
 ## Run the Captain loop
 
@@ -17,6 +18,9 @@ discover it; use `COORDLANE_STATE_DIR` only for an explicit alternate path.
    `timeoutMs=0` or the host equivalent, each worker's cursor/revision, and read
    only changes. Drain every worker through a fixed high-water mark; a
    multi-target wait returns only the first change and is not a full sweep.
+   If there is no active assignment, record an empty gate without calling task
+   tools. Otherwise try one batched zero-time snapshot and individually query
+   only targets absent from its result. Never reread unchanged full reports.
 2. **Audit.** Confirm repository, workspace, branch, HEAD, dirty state,
    instructions, authoritative truth, active ownership, dependencies, runtime
    switches, external side effects, and token/CPU/network/call budgets.
@@ -57,6 +61,11 @@ discover it; use `COORDLANE_STATE_DIR` only for an explicit alternate path.
     relevant state changed, ingest it in one deduplicated batch and update the
     answer once. Do not recurse into a scan loop.
 
+The bundled `PostToolUse(wait_threads)` Hook must attest both sweeps for the
+active `turn_id`. A local mailbox sweep cannot by itself set
+`final_gate_passed`. Respect the per-turn snapshot-call budget; if it is
+exhausted, mark freshness unknown instead of spending more quota.
+
 Begin every user turn by invalidating the prior final gate. Refuse finalization
 when monitored workers or unread terminal events exist and the current turn has
 not passed Pre-final, when the sweep cursor is behind, or when unread count is
@@ -76,7 +85,8 @@ Before a Crew returns final, require this producer order:
 1. atomically persist the complete terminal report;
 2. emit its digest-bound, idempotent event;
 3. send the bound Captain exactly one pure `worker_id` message;
-4. record the matching delivery receipt through `PostToolUse`; and
+4. record a structured transport-issued delivery receipt through `PostToolUse`;
+   a tool-call ID or plain-text response is only an attempt, not delivery; and
 5. pass the plugin `Stop` Hook before returning final.
 
 The message is only a wake hint. The durable report/event ledger remains truth.

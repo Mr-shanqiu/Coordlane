@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { gitSharedStateRoot, pluginProjectStateRoot } from "./state-root.mjs";
 
 export const SCHEMA_VERSION = "1.0.0";
 
@@ -68,7 +69,58 @@ export const canonicalJson = (value) => JSON.stringify(stableValue(value));
 export const sha256 = (value) =>
   `sha256:${crypto.createHash("sha256").update(canonicalJson(value)).digest("hex")}`;
 
-const ensureDirectory = (directory) => fs.mkdirSync(directory, { recursive: true });
+const ensureDirectory = (directory) => fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+
+const heldLocks = new Map();
+const sleepBuffer = new Int32Array(new SharedArrayBuffer(4));
+
+const withStoreLock = (root, callback) => {
+  const key = path.resolve(root);
+  const depth = heldLocks.get(key) ?? 0;
+  if (depth > 0) {
+    heldLocks.set(key, depth + 1);
+    try {
+      return callback();
+    } finally {
+      heldLocks.set(key, depth);
+    }
+  }
+
+  ensureDirectory(key);
+  const lockPath = path.join(key, ".coordlane.lock");
+  const deadline = Date.now() + 2000;
+  while (true) {
+    try {
+      fs.mkdirSync(lockPath, { mode: 0o700 });
+      break;
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      try {
+        const age = Date.now() - fs.statSync(lockPath).mtimeMs;
+        if (age > 30000) {
+          fs.rmdirSync(lockPath);
+          continue;
+        }
+      } catch (statError) {
+        if (statError.code !== "ENOENT") throw statError;
+      }
+      if (Date.now() >= deadline) throw new Error(`Coordlane store lock timed out: ${key}`);
+      Atomics.wait(sleepBuffer, 0, 0, 10);
+    }
+  }
+
+  heldLocks.set(key, 1);
+  try {
+    return callback();
+  } finally {
+    heldLocks.delete(key);
+    try {
+      fs.rmdirSync(lockPath);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+  }
+};
 
 export const atomicWriteJson = (filePath, value) => {
   ensureDirectory(path.dirname(filePath));
@@ -135,6 +187,7 @@ export const initProject = (root, projectId, options = {}) => {
     last_sweep_cursor: 0,
     unread_terminal_count: 0,
     final_gate_passed: false,
+    turn_gate: null,
     workers: []
   });
   atomicWriteJson(paths.ownership, {
@@ -150,20 +203,23 @@ const registryFor = (root) => readJson(requireStore(root).registry);
 const ledgerFor = (root) => readJson(requireStore(root).ledger);
 const ownershipFor = (root) => readJson(requireStore(root).ownership);
 
-export const bindCaptain = (root, input) => {
+export const bindCaptain = (root, input) => withStoreLock(root, () => {
   const paths = requireStore(root);
   const project = readJson(paths.project);
   if (typeof input.thread_id !== "string" || input.thread_id.length === 0 ||
     typeof input.host_id !== "string" || input.host_id.length === 0) {
     throw new Error("Captain binding requires stable thread_id and host_id");
   }
+  const collision = registryFor(root).workers.find((worker) =>
+    !worker.archived && worker.thread_id === input.thread_id);
+  if (collision) throw new Error(`Captain thread_id collides with worker ${collision.worker_id}`);
   project.captain_thread_id = input.thread_id;
   project.captain_host_id = input.host_id;
   project.project_revision += 1;
   project.updated_at = now();
   atomicWriteJson(paths.project, project);
   return project;
-};
+});
 
 export const isCaptainSession = (root, sessionId) =>
   projectFor(root).captain_thread_id === sessionId;
@@ -197,15 +253,17 @@ const updateWorker = (root, workerId, updater) => {
   return registry.workers[index];
 };
 
-export const createWorker = (root, input) => {
+export const createWorker = (root, input) => withStoreLock(root, () => {
   const paths = requireStore(root);
   const registry = readJson(paths.registry);
   if (registry.workers.some((worker) => worker.worker_id === input.worker_id)) {
     throw new Error(`Duplicate worker_id: ${input.worker_id}`);
   }
-  if (registry.workers.some((worker) =>
-    worker.thread_id === input.thread_id && worker.host_id === input.host_id)) {
-    throw new Error(`Duplicate stable worker address: ${input.host_id}/${input.thread_id}`);
+  if (registry.workers.some((worker) => worker.thread_id === input.thread_id)) {
+    throw new Error(`Duplicate worker thread_id: ${input.thread_id}`);
+  }
+  if (projectFor(root).captain_thread_id === input.thread_id) {
+    throw new Error("Worker thread_id collides with Captain");
   }
   const worker = {
     worker_id: input.worker_id,
@@ -234,7 +292,7 @@ export const createWorker = (root, input) => {
   ledger.final_gate_passed = false;
   atomicWriteJson(paths.ledger, ledger);
   return worker;
-};
+});
 
 export const readWorker = (root, selector) => {
   const registry = registryFor(root);
@@ -568,7 +626,7 @@ const assertTerminalReportContent = (content) => {
   }
 };
 
-export const persistReport = (root, input) => {
+const persistReportUnlocked = (root, input) => {
   const assignment = readAssignment(root, input.assignment_id);
   if (!assignment) throw new Error(`Unknown assignment_id: ${input.assignment_id}`);
   if (assignment.worker_id !== input.worker_id) throw new Error("Report worker does not match assignment");
@@ -610,6 +668,9 @@ export const persistReport = (root, input) => {
   return report;
 };
 
+export const persistReport = (root, input) =>
+  withStoreLock(root, () => persistReportUnlocked(root, input));
+
 const updateReport = (root, workerId, assignmentId, revision, updater) => {
   const filePath = reportPath(root, workerId, assignmentId, revision);
   const report = readJson(filePath);
@@ -649,6 +710,9 @@ const reportFiles = (root) => {
 const monitoredWorkers = (root) =>
   registryFor(root).workers.filter((worker) => worker.monitored !== false && !worker.archived);
 
+const activeMonitoredWorkers = (root) =>
+  monitoredWorkers(root).filter((worker) => worker.active_assignment_id !== null);
+
 const countUnreadTerminal = (root, ledger = ledgerFor(root)) => {
   const monitored = new Set(monitoredWorkers(root).map((worker) => worker.worker_id));
   return reportFiles(root)
@@ -670,7 +734,100 @@ const invalidateFinalGate = (root, requestedFreshness = "stale") => {
   return ledger;
 };
 
-export const beginTurn = (root) => invalidateFinalGate(root, "stale");
+const sweepPhase = () => ({ observed_workers: [], completed_at: null });
+
+const completeEmptySweep = (phase, requiredWorkers) => {
+  if (requiredWorkers.length === 0) phase.completed_at = now();
+  return phase;
+};
+
+export const beginTurn = (root, input = {}) => withStoreLock(root, () => {
+  const paths = requireStore(root);
+  const ledger = readJson(paths.ledger);
+  const registry = readJson(paths.registry);
+  const requiredWorkers = activeMonitoredWorkers(root).map((worker) => ({
+    worker_id: worker.worker_id,
+    thread_id: worker.thread_id,
+    host_id: worker.host_id
+  }));
+  ledger.unread_terminal_count = countUnreadTerminal(root, ledger);
+  ledger.final_gate_passed = false;
+  ledger.freshness = "stale";
+  ledger.turn_gate = {
+    turn_id: input.turn_id ?? `manual:${crypto.randomUUID()}`,
+    registry_revision: registry.registry_revision,
+    required_workers: requiredWorkers,
+    entry_sweep: completeEmptySweep(sweepPhase(), requiredWorkers),
+    pre_final_sweep: completeEmptySweep(sweepPhase(), requiredWorkers),
+    snapshot_tool_calls: 0,
+    max_snapshot_tool_calls: Math.max(2, requiredWorkers.length * 2 + 2),
+    budget_exhausted: false,
+    registry_changed: false,
+    started_at: now()
+  };
+  atomicWriteJson(paths.ledger, ledger);
+  return ledger;
+});
+
+const workerAddressKey = (worker) => `${worker.host_id}/${worker.thread_id}`;
+
+export const recordSweepObservation = (root, input) => withStoreLock(root, () => {
+  const paths = requireStore(root);
+  const ledger = readJson(paths.ledger);
+  const gate = ledger.turn_gate;
+  if (!gate || gate.turn_id !== input.turn_id) throw new Error("Sweep observation is not for the active turn");
+  if (input.timeout_ms !== 0) throw new Error("Coordlane accepts only non-blocking task snapshots");
+  if (gate.snapshot_tool_calls >= gate.max_snapshot_tool_calls) {
+    gate.budget_exhausted = true;
+    ledger.freshness = "unknown";
+    ledger.final_gate_passed = false;
+    atomicWriteJson(paths.ledger, ledger);
+    return {
+      turn_id: gate.turn_id,
+      complete: false,
+      budget_exhausted: true,
+      missing_workers: gate.required_workers,
+      snapshot_tool_calls: gate.snapshot_tool_calls,
+      max_snapshot_tool_calls: gate.max_snapshot_tool_calls
+    };
+  }
+  if (registryFor(root).registry_revision !== gate.registry_revision) {
+    gate.registry_changed = true;
+    ledger.freshness = "stale";
+    ledger.final_gate_passed = false;
+    atomicWriteJson(paths.ledger, ledger);
+    return {
+      turn_id: gate.turn_id,
+      complete: false,
+      registry_changed: true,
+      missing_workers: gate.required_workers,
+      snapshot_tool_calls: gate.snapshot_tool_calls,
+      max_snapshot_tool_calls: gate.max_snapshot_tool_calls
+    };
+  }
+
+  gate.snapshot_tool_calls += 1;
+  const phase = gate.entry_sweep.completed_at ? gate.pre_final_sweep : gate.entry_sweep;
+  const required = new Map(gate.required_workers.map((worker) => [workerAddressKey(worker), worker]));
+  for (const observed of input.observed_workers ?? []) {
+    const key = workerAddressKey(observed);
+    if (!required.has(key)) continue;
+    if (!phase.observed_workers.some((worker) => workerAddressKey(worker) === key)) {
+      phase.observed_workers.push(required.get(key));
+    }
+  }
+  if (phase.observed_workers.length === gate.required_workers.length) phase.completed_at = now();
+  atomicWriteJson(paths.ledger, ledger);
+  return {
+    turn_id: gate.turn_id,
+    phase: phase === gate.entry_sweep ? "entry" : "pre_final",
+    complete: Boolean(phase.completed_at),
+    missing_workers: gate.required_workers.filter((worker) =>
+      !phase.observed_workers.some((observed) => workerAddressKey(observed) === workerAddressKey(worker))),
+    snapshot_tool_calls: gate.snapshot_tool_calls,
+    max_snapshot_tool_calls: gate.max_snapshot_tool_calls
+  };
+});
 
 const recoverDurableReports = (root) => {
   const registered = new Set(
@@ -681,7 +838,19 @@ const recoverDurableReports = (root) => {
   for (const filePath of reportFiles(root)) {
     const report = readJson(filePath);
     const key = `${report.worker_id}:${report.assignment_id}:${report.report_revision}`;
-    if (!registered.has(report.worker_id) || report.lifecycle.status !== "durable" || known.has(key)) continue;
+    if (!registered.has(report.worker_id) || report.lifecycle.status !== "durable") continue;
+    const assignment = readAssignment(root, report.assignment_id);
+    if (assignment?.status === "running" &&
+      assignment.attempt_id === report.attempt_id &&
+      assignment.ownership_epoch === report.ownership_epoch) {
+      transition(assignment, report.content.status, ASSIGNMENT_TRANSITIONS, "assignment");
+      assignment.worker_report_revision = Math.max(
+        assignment.worker_report_revision,
+        report.report_revision
+      );
+      atomicWriteJson(assignmentPath(root, assignment.assignment_id), assignment);
+    }
+    if (known.has(key)) continue;
     const priority = report.content.status === "failed" ? "P0" : "P1";
     recovered.push(emitEvent(root, {
       worker_id: report.worker_id,
@@ -695,7 +864,7 @@ const recoverDurableReports = (root) => {
   return recovered;
 };
 
-export const emitEvent = (root, input) => {
+const emitEventUnlocked = (root, input) => {
   const report = readReport(root, input.worker_id, input.assignment_id, input.report_revision);
   if (!report) throw new Error("Cannot notify before a durable report exists");
   const idempotencyKey = `${input.worker_id}:${input.assignment_id}:${input.report_revision}`;
@@ -751,7 +920,10 @@ export const emitEvent = (root, input) => {
   return event;
 };
 
-export const recordNotificationDelivery = (root, eventId, input = {}) => {
+export const emitEvent = (root, input) =>
+  withStoreLock(root, () => emitEventUnlocked(root, input));
+
+const recordNotificationDeliveryUnlocked = (root, eventId, input = {}) => {
   const filePath = eventFiles(root).find((candidate) => readJson(candidate).event_id === eventId);
   if (!filePath) throw new Error(`Unknown event_id: ${eventId}`);
   const event = readJson(filePath);
@@ -766,7 +938,10 @@ export const recordNotificationDelivery = (root, eventId, input = {}) => {
   return { delivered: true, event };
 };
 
-export const recordNotificationFailure = (root, eventId, input = {}) => {
+export const recordNotificationDelivery = (root, eventId, input = {}) =>
+  withStoreLock(root, () => recordNotificationDeliveryUnlocked(root, eventId, input));
+
+const recordNotificationFailureUnlocked = (root, eventId, input = {}) => {
   const filePath = eventFiles(root).find((candidate) => readJson(candidate).event_id === eventId);
   if (!filePath) throw new Error(`Unknown event_id: ${eventId}`);
   const event = readJson(filePath);
@@ -777,6 +952,9 @@ export const recordNotificationFailure = (root, eventId, input = {}) => {
   atomicWriteJson(filePath, event);
   return { degraded: input.degraded === true, event };
 };
+
+export const recordNotificationFailure = (root, eventId, input = {}) =>
+  withStoreLock(root, () => recordNotificationFailureUnlocked(root, eventId, input));
 
 // Backward-compatible alias used by the reference scenarios.
 export const deliverNotification = (root, eventId, input = {}) =>
@@ -891,11 +1069,14 @@ export const scanEvents = (root, workerId, afterCursor, highWatermark = Number.P
     .filter((event) => event.worker_id === workerId && event.sequence > afterCursor && event.sequence <= highWatermark)
     .slice(0, batchSize);
 
-export const fullSweep = (root, options = {}) => {
+const fullSweepUnlocked = (root, options = {}) => {
   const paths = requireStore(root);
   const recovered = recoverDurableReports(root);
   const registry = readJson(paths.registry);
   const ledger = readJson(paths.ledger);
+  const diskHighWatermark = eventFiles(root).reduce((highest, filePath) =>
+    Math.max(highest, readJson(filePath).sequence), 0);
+  ledger.event_sequence = Math.max(ledger.event_sequence, diskHighWatermark);
   const highWatermark = ledger.event_sequence;
   const consumed = [];
   const batchSize = options.batch_size ?? 50;
@@ -940,7 +1121,10 @@ export const fullSweep = (root, options = {}) => {
   };
 };
 
-export const preFinalGate = (root, options = {}) => {
+export const fullSweep = (root, options = {}) =>
+  withStoreLock(root, () => fullSweepUnlocked(root, options));
+
+const preFinalGateUnlocked = (root, options = {}) => {
   if (options.scan_available === false) {
     const ledger = invalidateFinalGate(root, "unknown");
     return {
@@ -956,7 +1140,18 @@ export const preFinalGate = (root, options = {}) => {
     const paths = requireStore(root);
     const ledger = readJson(paths.ledger);
     ledger.unread_terminal_count = countUnreadTerminal(root, ledger);
+    const turnGateComplete = Boolean(
+      ledger.turn_gate?.entry_sweep?.completed_at &&
+      ledger.turn_gate?.pre_final_sweep?.completed_at &&
+      ledger.turn_gate.budget_exhausted !== true &&
+      ledger.turn_gate.registry_changed !== true &&
+      ledger.turn_gate.registry_revision === registryFor(root).registry_revision
+    );
+    if (ledger.turn_gate?.budget_exhausted || ledger.turn_gate?.registry_changed) {
+      ledger.freshness = "unknown";
+    }
     ledger.final_gate_passed =
+      turnGateComplete &&
       ledger.freshness === "fresh" &&
       ledger.unread_terminal_count === 0 &&
       ledger.last_sweep_cursor === ledger.event_sequence;
@@ -980,16 +1175,27 @@ export const preFinalGate = (root, options = {}) => {
   }
 };
 
-export const assertFinalizable = (root) => {
+export const preFinalGate = (root, options = {}) =>
+  withStoreLock(root, () => preFinalGateUnlocked(root, options));
+
+const assertFinalizableUnlocked = (root) => {
   const ledger = ledgerFor(root);
   const monitored = monitoredWorkers(root).length;
   const unread = countUnreadTerminal(root, ledger);
+  const turnGateComplete = Boolean(
+    ledger.turn_gate?.entry_sweep?.completed_at &&
+    ledger.turn_gate?.pre_final_sweep?.completed_at &&
+    ledger.turn_gate.budget_exhausted !== true &&
+    ledger.turn_gate.registry_changed !== true &&
+    ledger.turn_gate.registry_revision === registryFor(root).registry_revision
+  );
   if (monitored === 0 && unread === 0) return { allowed: true, reason: "no_monitored_workers" };
   if (!ledger.final_gate_passed || ledger.freshness !== "fresh" ||
-    unread !== 0 || ledger.last_sweep_cursor !== ledger.event_sequence) {
+    !turnGateComplete || unread !== 0 || ledger.last_sweep_cursor !== ledger.event_sequence) {
     throw new Error(
       `Finalization refused: freshness=${ledger.freshness}, ` +
-      `final_gate_passed=${ledger.final_gate_passed}, unread_terminal_count=${unread}`
+      `final_gate_passed=${ledger.final_gate_passed}, turn_gate_complete=${turnGateComplete}, ` +
+      `unread_terminal_count=${unread}`
     );
   }
   return {
@@ -1001,6 +1207,9 @@ export const assertFinalizable = (root) => {
     final_gate_passed: true
   };
 };
+
+export const assertFinalizable = (root) =>
+  withStoreLock(root, () => assertFinalizableUnlocked(root));
 
 export const closeAssignment = (root, assignmentId, input) => {
   const assignment = readAssignment(root, assignmentId);
@@ -1150,6 +1359,26 @@ export const notificationPolicy = (event, captainState) => {
 
 const main = () => {
   const [, , command, ...args] = process.argv;
+  if (command === "state-path") {
+    const [workspace, pluginData] = args;
+    if (!workspace) throw new Error("Usage: coordlane-ref state-path <workspace> [plugin-data-dir]");
+    const root = gitSharedStateRoot(path.resolve(workspace)) ??
+      pluginProjectStateRoot(path.resolve(workspace), pluginData ?? process.env.PLUGIN_DATA);
+    if (!root) throw new Error("Workspace is not a Git repository and no plugin data directory was supplied");
+    console.log(root);
+    return;
+  }
+  if (command === "init-repo") {
+    const [workspace, projectId, pluginData] = args;
+    if (!workspace || !projectId) {
+      throw new Error("Usage: coordlane-ref init-repo <workspace> <project-id> [plugin-data-dir]");
+    }
+    const root = gitSharedStateRoot(path.resolve(workspace)) ??
+      pluginProjectStateRoot(path.resolve(workspace), pluginData ?? process.env.PLUGIN_DATA);
+    if (!root) throw new Error("Workspace is not a Git repository and no plugin data directory was supplied");
+    console.log(JSON.stringify(initProject(root, projectId), null, 2));
+    return;
+  }
   if (command === "init") {
     const [root, projectId] = args;
     if (!root || !projectId) throw new Error("Usage: coordlane-ref init <state-dir> <project-id>");
@@ -1204,7 +1433,7 @@ const main = () => {
     }, null, 2));
     return;
   }
-  throw new Error("Usage: coordlane-ref <init|bind-captain|begin-turn|sweep|pre-final|finalize|status> ...");
+  throw new Error("Usage: coordlane-ref <state-path|init-repo|init|bind-captain|begin-turn|sweep|pre-final|finalize|status> ...");
 };
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {

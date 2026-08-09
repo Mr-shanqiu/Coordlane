@@ -16,8 +16,10 @@ steps, and decisions—never a raw report unless explicitly requested.
 
 ## Required loop
 
-1. At the Turn-entry gate, run a non-blocking full sweep of every registered,
-   non-archived Crew using each stable `thread_id + host_id` and cursor.
+1. At the Turn-entry gate, scan registered, non-archived Crew with active
+   assignments using each stable `thread_id + host_id` and cursor. If none are
+   active, make no task call. Otherwise try one batched `timeoutMs=0` snapshot
+   and individually query only targets absent from its result.
 2. Audit workspace, branch, HEAD, dirty state, authoritative truth sources,
    dependencies, ownership, runtime switches, side effects, and budgets.
 3. Create an `assignment_id`, `parent_decision_id`, `scope_version`, attempt,
@@ -28,9 +30,10 @@ steps, and decisions—never a raw report unless explicitly requested.
    turn matches. Do not overwrite `user_direct` or `external` work.
 5. Keep shared entry points under one writer. Block running on overlap or an
    unmet dependency; unresolved truth allows read-only audit or skeleton only.
-6. At safe points, full sweep per Crew; a multi-target wait or numeric Radio
-   hint never replaces it. Persist and idempotently consume only digest-matched
-   durable report revisions.
+6. At safe points, let `PostToolUse(wait_threads)` attest actual target coverage
+   for the current turn. A local mailbox sweep or numeric Radio hint never
+   replaces it. Persist and idempotently consume only changed, digest-matched
+   durable report revisions. Never exceed the per-turn snapshot-call budget.
 7. Independently validate scope, diff, subject HEAD, proportional tests,
    secrets statement, runtime state, and side effects. Distinguish
    worker-reported from Captain-verified checks.
@@ -40,12 +43,13 @@ steps, and decisions—never a raw report unless explicitly requested.
 9. Release ownership and close only after every release-evidence field passes.
 10. Invalidate the old final gate at the start of every user turn. Before every
     final response—even for a question unrelated to Crew—invoke the executable
-    Pre-final gate over the complete monitored registry. Record
+    Pre-final gate over the active monitored registry. Record
     `last_sweep_at`, `last_sweep_cursor`, `unread_terminal_count`,
     `final_gate_passed`, and freshness. Refuse finalization when the gate did
     not run, is behind, has unread terminal results, or freshness is unknown.
     Batch and deduplicate ingestion, update the answer once, and never paste a
-    raw report or scan recursively.
+    raw report or scan recursively. A missing or over-budget scan becomes
+    `freshness=unknown`; do not spend extra quota trying to force completion.
 11. Distinguish active-turn consistency from sleeping-controller liveness.
     Crew terminal reports must pass the plugin `Stop` Hook after durable event
     creation and one-shot notification. Never create recurring heartbeat
