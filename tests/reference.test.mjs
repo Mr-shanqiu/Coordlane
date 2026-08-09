@@ -9,12 +9,14 @@ import {
   assertFinalizable,
   beginTurn,
   closeAssignment,
+  configureHeartbeat,
   createAssignment,
   createWorker,
   deliverNotification,
   dispatchAssignment,
   emitEvent,
   fullSweep,
+  heartbeatProbe,
   initProject,
   integrateChange,
   notificationPolicy,
@@ -378,6 +380,34 @@ test("incident: unavailable scan marks freshness unknown and refuses final", () 
   assert.throws(() => assertFinalizable(root), /freshness=unknown/);
 });
 
+test("liveness: no broker honestly degrades to next-user-turn discovery", () => {
+  const root = makeRoot();
+  addWorker(root);
+  start(root, "20", "sleeping-no-broker");
+  const probe = heartbeatProbe(root);
+  assert.equal(probe.status, "unavailable");
+  assert.equal(probe.liveness_mode, "next_turn_only");
+  assert.equal(probe.monitored_running_count, 1);
+});
+
+test("liveness: durable completion without numeric wake triggers heartbeat then auto-stops", () => {
+  const root = makeRoot();
+  addWorker(root);
+  configureHeartbeat(root, { broker: "codex_heartbeat", sla_seconds: 60 });
+  start(root, "20", "sleeping-with-heartbeat");
+  assert.equal(heartbeatProbe(root).status, "armed");
+  persist(root, "20", "sleeping-with-heartbeat");
+  const probe = heartbeatProbe(root);
+  assert.equal(probe.wake_required, true);
+  assert.equal(probe.wake_reason, "unread_terminal");
+  assert.equal(probe.unread_terminal_count, 1);
+  const ingested = preFinalGate(root);
+  assert.equal(ingested.recovered.length, 1);
+  assert.equal(ingested.consumed.length, 1);
+  assert.equal(ingested.heartbeat.status, "stopped");
+  assert.equal(heartbeatProbe(root).wake_required, false);
+});
+
 let failures = 0;
 try {
   for (const { name, body } of tests) {
@@ -395,4 +425,4 @@ try {
 }
 
 if (failures > 0) process.exitCode = 1;
-else console.log("Passed 15 original failure scenarios, release lifecycle, and two executable pre-final incident gates.");
+else console.log("Passed 15 original failures plus release, active-turn finalization, and sleeping-controller liveness gates.");

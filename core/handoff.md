@@ -46,6 +46,20 @@ successful full sweep. Persist `last_sweep_at`, `last_sweep_cursor`,
 `unread_terminal_count`, `final_gate_passed`, and `freshness`. If the scan tool
 is unavailable or fails, set `freshness=unknown`; never claim synchronization.
 
+## Sleeping-controller liveness
+
+Turn-entry and Pre-final cover only the interval in which a Captain turn is
+active. After final, liveness requires an actual background heartbeat or event
+broker. A worker prompt and pure numeric message cannot guarantee it.
+
+Arm liveness only while a monitored Assignment is running or a terminal
+revision is unread. The probe compares lightweight task status and cursors;
+terminal, blocked, failed, or decision events wake the Captain for full ingest.
+The durable event ledger retains completion even if notification delivery
+fails. When no monitored work remains and unread count is zero, disarm the
+heartbeat. If no broker exists, record `next_turn_only`: synchronization waits
+for the next user or external wake and is not real-time.
+
 ## Notification queue and Radio
 
 Events contain routing metadata, never report prose. P0 safety/data-loss events

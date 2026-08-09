@@ -49,6 +49,14 @@ const TERMINAL_REPORT_STATUSES = new Set([
   "failed"
 ]);
 
+const HEARTBEAT_ACTIVE_ASSIGNMENT_STATUSES = new Set([
+  "dispatched",
+  "delivered",
+  "acknowledged",
+  "running",
+  "revision_requested"
+]);
+
 const now = () => new Date().toISOString();
 
 const stableValue = (value) => {
@@ -133,6 +141,17 @@ export const initProject = (root, projectId, options = {}) => {
     last_sweep_cursor: 0,
     unread_terminal_count: 0,
     final_gate_passed: false,
+    heartbeat: {
+      broker: null,
+      status: "stopped",
+      sla_seconds: null,
+      monitored_running_count: 0,
+      last_probe_at: null,
+      last_probe_cursor: 0,
+      wake_required: false,
+      last_wake_reason: null,
+      liveness_mode: "next_turn_only"
+    },
     workers: []
   });
   atomicWriteJson(paths.ownership, {
@@ -334,6 +353,7 @@ export const recordExternalAssignment = (root, input) => {
   entry.active_assignment_id = assignment.assignment_id;
   entry.origin = assignment.origin;
   atomicWriteJson(requireStore(root).ledger, ledger);
+  reconcileHeartbeat(root);
   return assignment;
 };
 
@@ -447,6 +467,7 @@ export const startAssignment = (root, assignmentId) => {
   entry.active_assignment_id = assignment.assignment_id;
   entry.origin = assignment.origin;
   atomicWriteJson(requireStore(root).ledger, ledger);
+  reconcileHeartbeat(root);
   return assignment;
 };
 
@@ -587,6 +608,7 @@ export const persistReport = (root, input) => {
   assignment.worker_report_revision = revision;
   atomicWriteJson(assignmentPath(root, assignment.assignment_id), assignment);
   invalidateFinalGate(root);
+  reconcileHeartbeat(root);
   return report;
 };
 
@@ -651,6 +673,74 @@ const invalidateFinalGate = (root, requestedFreshness = "stale") => {
 };
 
 export const beginTurn = (root) => invalidateFinalGate(root, "stale");
+
+const monitoredRunningCount = (root) => {
+  const monitored = new Set(monitoredWorkers(root).map((worker) => worker.worker_id));
+  return listAssignments(root).filter((assignment) =>
+    monitored.has(assignment.worker_id) && HEARTBEAT_ACTIVE_ASSIGNMENT_STATUSES.has(assignment.status)).length;
+};
+
+export const reconcileHeartbeat = (root) => {
+  const paths = requireStore(root);
+  const ledger = readJson(paths.ledger);
+  const running = monitoredRunningCount(root);
+  const unread = countUnreadTerminal(root, ledger);
+  const shouldRun = running > 0 || unread > 0;
+  ledger.heartbeat.monitored_running_count = running;
+  ledger.unread_terminal_count = unread;
+  if (!shouldRun) {
+    ledger.heartbeat.status = "stopped";
+    ledger.heartbeat.wake_required = false;
+    ledger.heartbeat.last_wake_reason = null;
+  } else if (ledger.heartbeat.broker) {
+    ledger.heartbeat.status = "armed";
+  } else {
+    ledger.heartbeat.status = "unavailable";
+  }
+  ledger.heartbeat.liveness_mode = ledger.heartbeat.broker ? "background_sla" : "next_turn_only";
+  atomicWriteJson(paths.ledger, ledger);
+  return ledger.heartbeat;
+};
+
+export const configureHeartbeat = (root, input) => {
+  const paths = requireStore(root);
+  const ledger = readJson(paths.ledger);
+  if (input.broker !== null && !["codex_heartbeat", "event_broker"].includes(input.broker)) {
+    throw new Error("Heartbeat broker must be codex_heartbeat, event_broker, or null");
+  }
+  if (input.broker && (!Number.isInteger(input.sla_seconds) || input.sla_seconds < 10)) {
+    throw new Error("Heartbeat SLA must be an integer of at least 10 seconds");
+  }
+  ledger.heartbeat.broker = input.broker;
+  ledger.heartbeat.sla_seconds = input.broker ? input.sla_seconds : null;
+  atomicWriteJson(paths.ledger, ledger);
+  return reconcileHeartbeat(root);
+};
+
+export const heartbeatProbe = (root) => {
+  reconcileHeartbeat(root);
+  const paths = requireStore(root);
+  const ledger = readJson(paths.ledger);
+  const unread = countUnreadTerminal(root, ledger);
+  const eventChanged = ledger.event_sequence > ledger.heartbeat.last_probe_cursor;
+  const wakeRequired = ledger.heartbeat.status === "armed" && (unread > 0 || eventChanged);
+  ledger.heartbeat.last_probe_at = now();
+  ledger.heartbeat.last_probe_cursor = ledger.event_sequence;
+  ledger.heartbeat.wake_required = wakeRequired;
+  ledger.heartbeat.last_wake_reason = wakeRequired
+    ? (unread > 0 ? "unread_terminal" : "event_cursor_changed")
+    : null;
+  atomicWriteJson(paths.ledger, ledger);
+  return {
+    status: ledger.heartbeat.status,
+    liveness_mode: ledger.heartbeat.liveness_mode,
+    monitored_running_count: ledger.heartbeat.monitored_running_count,
+    unread_terminal_count: unread,
+    probe_cursor: ledger.heartbeat.last_probe_cursor,
+    wake_required: wakeRequired,
+    wake_reason: ledger.heartbeat.last_wake_reason
+  };
+};
 
 const recoverDurableReports = (root) => {
   const registered = new Set(
@@ -846,11 +936,13 @@ export const fullSweep = (root, options = {}) => {
   ledger.unread_terminal_count = countUnreadTerminal(root, ledger);
   ledger.freshness = ledger.unread_terminal_count === 0 ? "fresh" : "stale";
   atomicWriteJson(paths.ledger, ledger);
+  const heartbeat = reconcileHeartbeat(root);
   return {
     scan_status: "complete",
     observed_through: highWatermark,
     recovered,
     consumed,
+    heartbeat,
     unchanged: consumed.length === 0
   };
 };
@@ -959,6 +1051,7 @@ export const closeAssignment = (root, assignmentId, input) => {
     updateReport(root, assignment.worker_id, assignment.assignment_id, assignment.worker_report_revision,
       (value) => transitionReport(value, "archived"));
   }
+  reconcileHeartbeat(root);
   return assignment;
 };
 
@@ -1097,6 +1190,23 @@ const main = () => {
     console.log(JSON.stringify(assertFinalizable(path.resolve(root)), null, 2));
     return;
   }
+  if (command === "heartbeat-config") {
+    const [root, broker, sla] = args;
+    if (!root || !broker) {
+      throw new Error("Usage: coordlane-ref heartbeat-config <state-dir> <codex_heartbeat|event_broker|none> [sla-seconds]");
+    }
+    console.log(JSON.stringify(configureHeartbeat(path.resolve(root), {
+      broker: broker === "none" ? null : broker,
+      sla_seconds: broker === "none" ? null : Number(sla)
+    }), null, 2));
+    return;
+  }
+  if (command === "heartbeat-probe") {
+    const [root] = args;
+    if (!root) throw new Error("Usage: coordlane-ref heartbeat-probe <state-dir>");
+    console.log(JSON.stringify(heartbeatProbe(path.resolve(root)), null, 2));
+    return;
+  }
   if (command === "status") {
     const [root] = args;
     if (!root) throw new Error("Usage: coordlane-ref status <state-dir>");
@@ -1108,7 +1218,7 @@ const main = () => {
     }, null, 2));
     return;
   }
-  throw new Error("Usage: coordlane-ref <init|begin-turn|sweep|pre-final|finalize|status> ...");
+  throw new Error("Usage: coordlane-ref <init|begin-turn|sweep|pre-final|finalize|heartbeat-config|heartbeat-probe|status> ...");
 };
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {

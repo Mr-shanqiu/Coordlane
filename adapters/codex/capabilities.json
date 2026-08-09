@@ -14,6 +14,9 @@
     "emit_event": {"tool": "send_message_to_thread", "status": "opportunistic_only"},
     "scan_events": {"tool": "wait_threads", "status": "available_per_target_with_cursor"},
     "ack_event": {"tool": "coordlane_ledger", "status": "reference_implementation"},
+    "arm_liveness": {"tool": "automation_update", "status": "available_opt_in_heartbeat"},
+    "probe_liveness": {"tool": "wait_threads", "status": "available_lightweight_snapshot"},
+    "disarm_liveness": {"tool": "automation_update", "status": "available"},
     "archive_worker": {"tool": "set_thread_archived", "status": "available"},
     "workspace_status": {"tool": "git_read_only", "status": "available"},
     "integrate_change": {"tool": "captain_controlled_git", "status": "manual_authority_gate"}

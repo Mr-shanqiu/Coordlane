@@ -45,3 +45,7 @@ claim.
   create separate user-owned test tasks.
 
 These gaps are why the adapter is Level 2 rather than Level 1.
+
+The projectless create/ACK/wait/cursor/send/archive path was live-tested on
+2026-08-09. Worktree and durable digest acceptance remain open; see the
+[acceptance record](../testing/codex-live-acceptance-2026-08-09.md).

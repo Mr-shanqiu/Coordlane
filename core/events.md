@@ -43,3 +43,9 @@ an opportunistic hint.
 Advance a cursor only after successful application. Re-reading an event must
 be harmless. A digest mismatch, missing report, stale attempt, or ownership
 epoch mismatch stops consumption and creates a Captain-visible risk.
+
+While the Captain sleeps, the durable ledger—not notification transport—is
+truth. A configured heartbeat compares only worker status, event cursor, and
+unread count. It wakes full report processing on terminal or decision changes
+and stops after the ledger is drained. Without that broker, discovery occurs at
+the next Captain turn.

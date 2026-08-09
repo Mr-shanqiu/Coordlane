@@ -100,6 +100,20 @@ that can send a wake after a task's final answer. Therefore:
 - never retry, loop, schedule, or background-poll pure numeric messages; and
 - never insert raw Crew reports into the Captain's user conversation.
 
+## Sleeping-controller heartbeat
+
+Use the Codex heartbeat automation only when a completion SLA is required and
+the user has authorized monitoring. Arm it when at least one registered Crew is
+running or a terminal revision is unread. Each heartbeat calls a zero-time,
+per-task cursor snapshot and does no report read when unchanged. On terminal or
+decision change, it wakes the Captain to read, validate, and ingest. When all
+monitored tasks are terminal and consumed, disable the heartbeat.
+
+Do not confuse the heartbeat with a completion observer: it is bounded polling
+and its SLA is the configured interval plus scheduler latency. If no heartbeat
+is active, the adapter synchronizes sleeping-period results only on the next
+user or external wake and must not claim real-time reporting.
+
 ## Safety and fallback
 
 If stable IDs, cursors, or bounded snapshots are unavailable, downgrade to

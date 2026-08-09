@@ -49,6 +49,13 @@ Coordlane 是一套本地优先的协作协议和 Codex Skill，用一个 Captai
 
 本项目不提供服务器、daemon、遥测、对话保存、密钥处理、自动合并、自动
 迁移、自动部署、自动发布、运行开关切换，也不会默认启用第三方 Hook。
+经过授权的宿主 heartbeat 只在仍有运行任务或未读终态时临时启用，摄取完成
+后必须自动停止。
+
+回合扫描解决 active-turn consistency，但无法在 final 之后凭空发现结果。
+主控休眠期若需要 SLA，必须配置真正的 heartbeat/event broker：动态启停、
+只比较轻量状态和 cursor、仅在终态变化时唤醒完整主控。没有 broker 时只能
+承诺“下次用户或外部事件唤醒后同步”，不能称为实时汇报。
 
 ## 快速开始
 
@@ -90,9 +97,11 @@ Pre-final 门禁适用于每一次回答，即使本轮问题与 Crew 无关。�
 
 ## 当前边界
 
-协议、文件状态仓、Schema 和失败场景模拟已经可以在本地运行。真实跨任务的
-Codex 创建与派发测试需要用户明确同意创建测试任务，不能由仓库测试结果代替。
-准确边界见[自审](docs/self-audit.md)。
+协议、文件状态仓、Schema 和失败场景模拟已经可以在本地运行。经过授权的
+Codex projectless 实测已通过稳定身份、创建、投递与 ACK 分离、首变化 wait、
+逐任务 cursor 排空、无变化抑制、结构化 final 和归档。worktree 与加密持久
+报告仍未通过。详见[验收记录](docs/testing/codex-live-acceptance-2026-08-09.md)
+和[自审](docs/self-audit.md)。
 
 本阶段不创建 GitHub Release，也不创建或更新外部 PR。早期 Agent Captain
 草案的迁移方式见[迁移说明](docs/migration-from-agent-captain.md)。先行项目比较

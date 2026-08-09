@@ -58,7 +58,15 @@ Read the [architecture](docs/architecture.md),
 
 Coordlane ships no server, daemon, telemetry, transcript store, secret handler,
 automatic merge, deployment, migration, release, runtime switch, or enabled
-third-party hook.
+third-party hook. An authorized host heartbeat is temporary and exists only to
+cover sleeping-controller liveness while monitored work is outstanding.
+
+Turn scans provide active-turn consistency. They cannot discover a worker that
+finishes after final until another turn starts. For an SLA during that sleeping
+period, Coordlane requires a real heartbeat/event broker that arms dynamically,
+checks only status/cursors, wakes full ingest only on terminal change, and
+stops after the ledger is drained. Without it, the honest guarantee is “sync on
+the next user or external wake,” not real-time reporting.
 
 ## Quick start
 
@@ -104,9 +112,12 @@ task state is synchronized.
 ## Project status and boundaries
 
 The protocol, reference store, schemas, and simulated failure tests are
-runnable locally. Live cross-task Codex creation/dispatch tests require an
-explicit user request to create test tasks and are not implied by repository
-tests. See the [self-audit](docs/self-audit.md) for the exact evidence boundary.
+runnable locally. An authorized projectless Codex acceptance passed stable
+identity, create, delivery/ACK separation, first-change wait, per-task cursor
+drain, unchanged suppression, structured final, and archive. Worktree and
+cryptographic durable-report checks remain open. See the
+[acceptance record](docs/testing/codex-live-acceptance-2026-08-09.md) and
+[self-audit](docs/self-audit.md).
 
 No GitHub Release or external PR is created by this phase. Migration from early
 Agent Captain drafts is documented in

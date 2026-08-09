@@ -11,6 +11,9 @@ persist_report
 emit_event
 scan_events
 ack_event
+arm_liveness
+probe_liveness
+disarm_liveness
 archive_worker
 workspace_status
 integrate_change
@@ -22,6 +25,12 @@ may return the first changed worker and never substitutes for `scan_events`
 across all registered workers. `persist_report` must complete before
 `emit_event`. `integrate_change` is always gated by Captain validation and
 explicit branch policy.
+
+`arm_liveness` requires a real heartbeat/event broker and an SLA.
+`probe_liveness` reads lightweight status/cursor metadata only and returns
+whether full Captain ingest is required. `disarm_liveness` runs automatically
+when monitored running count and unread terminal count are both zero. Without
+these operations, the adapter is `next_turn_only` while the Captain sleeps.
 
 ## Capability levels
 

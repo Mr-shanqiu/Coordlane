@@ -67,6 +67,25 @@ the user asks for status. Stay silent on unchanged snapshots. Surface only
 completed outcome, risk, Captain validation, integration, next step, and needed
 decisions.
 
+## Separate consistency from sleeping liveness
+
+Turn-entry and Pre-final provide **active-turn consistency** only. After the
+Captain emits final, no prompt rule can provide liveness because no controller
+turn is running. If the Mission requires completion discovery within an SLA,
+configure a real host heartbeat or event broker before leaving workers active.
+
+Arm the heartbeat only while a monitored Assignment is nonterminal or a
+terminal revision is unread. Each heartbeat performs only a bounded status and
+cursor comparison. Wake the full Captain only for terminal, failed, blocked, or
+decision-needed change. After ingest leaves no running monitored Assignment and
+no unread terminal revision, stop the heartbeat automatically.
+
+Worker notification is never the sleeping-controller mechanism. Terminal state
+must remain in the durable report/event ledger when notification fails. If no
+heartbeat or broker exists, record `liveness_mode=next_turn_only` and state
+honestly that results synchronize only when the user or another event starts
+the next Captain turn. Never claim real-time reporting in that mode.
+
 ## Enforce state boundaries
 
 - Assignment: `draft -> dispatched -> delivered -> acknowledged -> running ->

@@ -13,18 +13,26 @@ Last audited: 2026-08-09
 - Executable `beginTurn`, `preFinalGate`, and `assertFinalizable` guards,
   including the four-simultaneous-completion incident and scan-unavailable
   regression.
+- Dynamic heartbeat state, lightweight probe, durable no-number completion
+  recovery, honest `next_turn_only` fallback, and automatic stop regression.
 - Prompt templates and a portable Skill with safe-point coordination rules.
 
-## Codex mapping with incomplete live acceptance
+## Codex live acceptance
 
 - Current Codex desktop exposes stable task IDs, task list/read/send/wait,
   per-task cursors, `timeoutMs=0` snapshots, archive, and worktree-aware task
   creation. The current task inventory was read without opening unrelated task
   contents.
-- A live synthetic create/dispatch/ACK/completion test has not run because
-  creating user-owned tasks requires explicit user authorization.
+- Two authorized synthetic projectless tasks passed stable identity, create,
+  assignment readback, ACK, directed delivery, first-change wait, independent
+  cursor drain, unchanged suppression, structured final, and archive checks.
+- Codex worktree creation remains untested because the saved project entry
+  still points to the pre-rename directory, which no longer exists.
+- Live reports used explicit placeholder digests; cryptographic durable-report
+  persistence before final remains unverified.
 - The current host does not establish a completion observer that runs after a
-  worker final answer; safe-point full sweeps remain authoritative.
+  worker final answer; safe-point full sweeps remain authoritative during a
+  turn, and an opt-in heartbeat is required for sleeping-period SLA.
 
 ## Deferred, not supported
 
@@ -38,5 +46,7 @@ Last audited: 2026-08-09
 ## Evidence boundary
 
 Passing tests proves repository rules, Codex adapter-contract shape, and
-simulations—not live cross-task completion behavior. Before a Codex release,
-run the authorized synthetic acceptance plan on the exact installed version.
+simulations. The projectless live acceptance evidence is recorded in
+[`testing/codex-live-acceptance-2026-08-09.md`](testing/codex-live-acceptance-2026-08-09.md).
+Before a Codex release, repeat it with a corrected saved-project path and a
+disposable worktree, then add durable digest verification.

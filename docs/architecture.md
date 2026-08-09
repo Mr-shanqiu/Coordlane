@@ -71,6 +71,19 @@ pass; `preFinalGate` runs a bounded registry-wide sweep and records freshness;
 `assertFinalizable` rejects output if the gate is missing, stale, unknown, or
 has unread terminal revisions. Topic relevance never bypasses this guard.
 
+## Two reliability domains
+
+**Active-turn consistency** uses Turn-entry, safe-point, and Pre-final sweeps
+while the Captain is executing. **Sleeping-controller liveness** begins after
+final and requires a host heartbeat or event broker. The former cannot satisfy
+the latter.
+
+Heartbeat state is dynamic: arm when a monitored Assignment runs or a terminal
+revision is unread; probe only status/cursor metadata; wake full Captain review
+for terminal or decision change; disarm after ingestion leaves neither running
+work nor unread terminal state. Without a broker, the honest mode is
+`next_turn_only`, not real-time reporting.
+
 ## Security and resource model
 
 Coordlane treats worker reports as untrusted claims until the Captain checks

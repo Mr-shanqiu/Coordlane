@@ -11,6 +11,9 @@ const requiredOperations = [
   "emit_event",
   "scan_events",
   "ack_event",
+  "arm_liveness",
+  "probe_liveness",
+  "disarm_liveness",
   "archive_worker",
   "workspace_status",
   "integrate_change"
@@ -44,7 +47,9 @@ for (const term of [
   "full sweep",
   "after final",
   "final_gate_passed",
-  "freshness=unknown"
+  "freshness=unknown",
+  "Sleeping-controller heartbeat",
+  "must not claim real-time reporting"
 ]) {
   assert.ok(codexReadme.includes(term), `Codex adapter is missing: ${term}`);
 }
