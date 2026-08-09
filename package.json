@@ -1,0 +1,14 @@
+{
+  "name": "coordlane",
+  "version": "0.1.0-dev",
+  "private": true,
+  "description": "Protocol-first coordination for auditable multi-agent project work",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "test": "node tests/validate.mjs"
+  },
+  "devDependencies": {
+    "ajv": "^8.17.1"
+  }
+}

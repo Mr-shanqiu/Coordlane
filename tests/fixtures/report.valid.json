@@ -1,0 +1,29 @@
+{
+  "crew_id": "20",
+  "status": "completed",
+  "task": "Add search to the fictional library catalog",
+  "workspace": {
+    "path": "/workspace/library-search",
+    "branch": "crew/20-search",
+    "head": "abc1234"
+  },
+  "completed_work": ["Added title and author filters"],
+  "commit": "def5678",
+  "validation": [
+    {
+      "check": "npm test",
+      "result": "passed",
+      "evidence": "18 tests passed"
+    }
+  ],
+  "modified_or_occupied": ["src/search.js", "tests/search.test.js"],
+  "shared_or_overlap": ["Captain must add the route to src/app.js"],
+  "runtime_state": {
+    "external_side_effects": [],
+    "running_processes": [],
+    "switches": []
+  },
+  "captain_decision_required": [],
+  "suggested_next_step": "Review and release ownership",
+  "ownership_released": false
+}

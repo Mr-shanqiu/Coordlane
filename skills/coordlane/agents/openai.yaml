@@ -1,0 +1,4 @@
+interface:
+  display_name: "Coordlane"
+  short_description: "Coordinate auditable multi-agent project work"
+  default_prompt: "Use $coordlane to coordinate this mission with explicit ownership, dependencies, gates, and handoffs."

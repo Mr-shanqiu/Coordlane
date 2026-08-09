@@ -1,0 +1,20 @@
+{
+  "mission_id": "fictional-library",
+  "claims": [
+    {
+      "resource": "src/search.js",
+      "owner": "20",
+      "mode": "exclusive",
+      "state": "active",
+      "release": {
+        "commit_disposition": false,
+        "workspace_checked": false,
+        "validation_recorded": false,
+        "no_more_edits": false,
+        "overlap_checked": false,
+        "runtime_state_recorded": false,
+        "captain_confirmed": false
+      }
+    }
+  ]
+}

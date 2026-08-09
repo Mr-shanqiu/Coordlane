@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/coordlane/workstream.schema.json",
+  "title": "Workstream contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "mission_id",
+    "title",
+    "objective",
+    "acceptance_criteria",
+    "captain",
+    "crew",
+    "workspace",
+    "owned_paths",
+    "forbidden_paths",
+    "shared_entrypoints",
+    "dependencies",
+    "gates",
+    "external_side_effects_allowed",
+    "stop_conditions",
+    "status"
+  ],
+  "properties": {
+    "id": { "$ref": "#/$defs/id" },
+    "mission_id": { "$ref": "#/$defs/id" },
+    "title": { "$ref": "#/$defs/nonEmpty" },
+    "objective": { "$ref": "#/$defs/nonEmpty" },
+    "acceptance_criteria": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/nonEmpty" }
+    },
+    "captain": { "$ref": "#/$defs/id" },
+    "crew": { "$ref": "#/$defs/id" },
+    "workspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "branch", "baseline_head"],
+      "properties": {
+        "path": { "$ref": "#/$defs/nonEmpty" },
+        "branch": { "$ref": "#/$defs/nonEmpty" },
+        "baseline_head": { "$ref": "#/$defs/nonEmpty" }
+      }
+    },
+    "owned_paths": { "$ref": "#/$defs/uniqueStrings" },
+    "forbidden_paths": { "$ref": "#/$defs/uniqueStrings" },
+    "shared_entrypoints": { "$ref": "#/$defs/uniqueStrings" },
+    "dependencies": { "$ref": "#/$defs/uniqueIds" },
+    "gates": { "$ref": "#/$defs/uniqueIds" },
+    "external_side_effects_allowed": { "type": "boolean" },
+    "allowed_side_effects": { "$ref": "#/$defs/uniqueStrings" },
+    "stop_conditions": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/nonEmpty" },
+      "uniqueItems": true
+    },
+    "status": {
+      "enum": [
+        "planned",
+        "ready",
+        "active",
+        "completed",
+        "blocked",
+        "decision_needed"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "external_side_effects_allowed": { "const": true } },
+        "required": ["external_side_effects_allowed"]
+      },
+      "then": {
+        "required": ["allowed_side_effects"],
+        "properties": {
+          "allowed_side_effects": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/$defs/nonEmpty" },
+            "uniqueItems": true
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+    "nonEmpty": { "type": "string", "minLength": 1 },
+    "uniqueStrings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/nonEmpty" },
+      "uniqueItems": true
+    },
+    "uniqueIds": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/id" },
+      "uniqueItems": true
+    }
+  }
+}

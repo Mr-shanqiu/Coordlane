@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/coordlane/report.schema.json",
+  "title": "Crew terminal report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "crew_id",
+    "status",
+    "task",
+    "workspace",
+    "completed_work",
+    "commit",
+    "validation",
+    "modified_or_occupied",
+    "shared_or_overlap",
+    "runtime_state",
+    "captain_decision_required",
+    "suggested_next_step",
+    "ownership_released"
+  ],
+  "properties": {
+    "crew_id": { "$ref": "#/$defs/id" },
+    "status": {
+      "enum": ["completed", "blocked", "decision_needed"]
+    },
+    "task": { "$ref": "#/$defs/nonEmpty" },
+    "workspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "branch", "head"],
+      "properties": {
+        "path": { "$ref": "#/$defs/nonEmpty" },
+        "branch": { "$ref": "#/$defs/nonEmpty" },
+        "head": { "$ref": "#/$defs/nonEmpty" }
+      }
+    },
+    "completed_work": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/nonEmpty" }
+    },
+    "commit": {
+      "oneOf": [
+        { "$ref": "#/$defs/nonEmpty" },
+        { "type": "null" }
+      ]
+    },
+    "no_commit_reason": { "$ref": "#/$defs/nonEmpty" },
+    "validation": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["check", "result", "evidence"],
+        "properties": {
+          "check": { "$ref": "#/$defs/nonEmpty" },
+          "result": { "enum": ["passed", "failed", "not_run"] },
+          "evidence": { "$ref": "#/$defs/nonEmpty" }
+        }
+      }
+    },
+    "modified_or_occupied": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/nonEmpty" },
+      "uniqueItems": true
+    },
+    "shared_or_overlap": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/nonEmpty" },
+      "uniqueItems": true
+    },
+    "runtime_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["external_side_effects", "running_processes", "switches"],
+      "properties": {
+        "external_side_effects": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/nonEmpty" }
+        },
+        "running_processes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/nonEmpty" }
+        },
+        "switches": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/nonEmpty" }
+        }
+      }
+    },
+    "captain_decision_required": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/nonEmpty" }
+    },
+    "suggested_next_step": { "$ref": "#/$defs/nonEmpty" },
+    "ownership_released": { "const": false }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "commit": { "type": "null" } } },
+      "then": {
+        "required": ["no_commit_reason"],
+        "properties": {
+          "no_commit_reason": { "$ref": "#/$defs/nonEmpty" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "status": { "const": "decision_needed" } },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "captain_decision_required": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/$defs/nonEmpty" }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+    "nonEmpty": { "type": "string", "minLength": 1 }
+  }
+}

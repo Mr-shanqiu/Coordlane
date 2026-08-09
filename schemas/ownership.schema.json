@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/coordlane/ownership.schema.json",
+  "title": "Mission ownership ledger",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["mission_id", "claims"],
+  "properties": {
+    "mission_id": { "$ref": "#/$defs/id" },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["resource", "owner", "mode", "state", "release"],
+        "properties": {
+          "resource": { "$ref": "#/$defs/nonEmpty" },
+          "owner": { "$ref": "#/$defs/id" },
+          "mode": { "enum": ["exclusive", "shared-entrypoint"] },
+          "state": {
+            "enum": ["reserved", "active", "release_pending", "released"]
+          },
+          "release": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["commit_disposition", "workspace_checked", "validation_recorded", "no_more_edits", "overlap_checked", "runtime_state_recorded", "captain_confirmed"],
+            "properties": {
+              "commit_disposition": { "type": "boolean" },
+              "workspace_checked": { "type": "boolean" },
+              "validation_recorded": { "type": "boolean" },
+              "no_more_edits": { "type": "boolean" },
+              "overlap_checked": { "type": "boolean" },
+              "runtime_state_recorded": { "type": "boolean" },
+              "captain_confirmed": { "type": "boolean" }
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": { "state": { "const": "released" } },
+              "required": ["state"]
+            },
+            "then": {
+              "properties": {
+                "release": {
+                  "type": "object",
+                  "properties": {
+                    "commit_disposition": { "const": true },
+                    "workspace_checked": { "const": true },
+                    "validation_recorded": { "const": true },
+                    "no_more_edits": { "const": true },
+                    "overlap_checked": { "const": true },
+                    "runtime_state_recorded": { "const": true },
+                    "captain_confirmed": { "const": true }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+    "nonEmpty": { "type": "string", "minLength": 1 }
+  }
+}
