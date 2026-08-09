@@ -24,6 +24,8 @@ directories are deferred research notes, not support claims.
 - Terminal reports are revisioned, digest-bound, and durable before events.
 - Turn-entry and pre-final full sweeps discover results even when wake messages
   are lost, early, or impossible after final output.
+- An executable finalizer refuses an answer when the current turn lacks a fresh
+  registry-wide Pre-final sweep or terminal results remain unread.
 - Captain verification is separate from worker-reported tests.
 - Explicit branch policy prevents cherry-pick and persistent-workstream history
   from being mixed.
@@ -94,6 +96,10 @@ Coordlane therefore uses Level 2 orchestration:
 5. treat multi-target wait as first-change latency optimization only;
 6. consume only durable, matching report revisions; and
 7. treat pure numeric wake as an optional hint, never truth or completeness.
+
+The Pre-final gate applies to every answer, including questions unrelated to
+Crew. Scan failure records `freshness=unknown`; Coordlane must not claim that
+task state is synchronized.
 
 ## Project status and boundaries
 

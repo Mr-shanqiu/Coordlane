@@ -79,6 +79,12 @@ status requests:
 6. persist the new cursor only after successful consumption; and
 7. stay silent when the entire sweep is unchanged.
 
+At user-turn entry, invalidate `final_gate_passed`. Immediately before final,
+run the registry-wide sweep even for an unrelated question. A wrapper or host
+finalizer must call the reference `preFinalGate`/`assertFinalizable` equivalent;
+prompt compliance alone is insufficient. If task snapshots are unavailable,
+record `freshness=unknown` and do not say that Crew state is synchronized.
+
 Do not treat one multi-target `wait_threads` result as a full scan. Use it only
 to reduce latency while otherwise waiting. Do not wait on the calling task.
 

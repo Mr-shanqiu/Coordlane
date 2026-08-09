@@ -6,6 +6,8 @@ import path from "node:path";
 import {
   acknowledgeAssignment,
   archiveWorker,
+  assertFinalizable,
+  beginTurn,
   closeAssignment,
   createAssignment,
   createWorker,
@@ -17,6 +19,7 @@ import {
   integrateChange,
   notificationPolicy,
   persistReport,
+  preFinalGate,
   readAssignment,
   readReport,
   readWorker,
@@ -343,6 +346,38 @@ test("supplemental: close requires complete release evidence", () => {
   assert.equal(archiveWorker(root, "20").archived, true);
 });
 
+test("incident: pre-final gate ingests four completions during an unrelated answer", () => {
+  const root = makeRoot();
+  for (const worker of ["30", "35", "40", "50"]) {
+    addWorker(root, worker);
+    start(root, worker, `ordinary-${worker}`);
+  }
+  beginTurn(root);
+  for (const worker of ["30", "35", "40", "50"]) {
+    const report = persist(root, worker, `ordinary-${worker}`);
+    notify(root, report);
+  }
+  assert.throws(() => assertFinalizable(root), /Finalization refused/);
+  const gate = preFinalGate(root, { batch_size: 2 });
+  assert.equal(gate.final_gate_passed, true);
+  assert.equal(gate.freshness, "fresh");
+  assert.equal(gate.unread_terminal_count, 0);
+  assert.deepEqual(new Set(gate.consumed.map((event) => event.worker_id)), new Set(["30", "35", "40", "50"]));
+  assert.ok(gate.consumed.every((event) => !("content" in event)), "notification batch leaked raw report content");
+  assert.equal(new Set(gate.consumed.map((event) => event.idempotency_key)).size, 4);
+  assert.equal(assertFinalizable(root).allowed, true);
+});
+
+test("incident: unavailable scan marks freshness unknown and refuses final", () => {
+  const root = makeRoot();
+  addWorker(root);
+  beginTurn(root);
+  const gate = preFinalGate(root, { scan_available: false });
+  assert.equal(gate.freshness, "unknown");
+  assert.equal(gate.final_gate_passed, false);
+  assert.throws(() => assertFinalizable(root), /freshness=unknown/);
+});
+
 let failures = 0;
 try {
   for (const { name, body } of tests) {
@@ -360,4 +395,4 @@ try {
 }
 
 if (failures > 0) process.exitCode = 1;
-else console.log("Passed 15 Coordlane failure scenarios plus the release-lifecycle invariant.");
+else console.log("Passed 15 original failure scenarios, release lifecycle, and two executable pre-final incident gates.");

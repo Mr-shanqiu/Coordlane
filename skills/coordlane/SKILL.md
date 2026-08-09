@@ -48,8 +48,19 @@ coordination truth in explicit state, not in session titles or chat memory.
     commits. Never auto-reset, rebase, force, merge, deploy, migrate, publish,
     or switch runtime state. Release ownership only with complete evidence.
 11. **Pre-final full sweep.** After completing the core answer and before the
-    final response, repeat the non-blocking full sweep. If relevant state
-    changed, update the answer once. Do not recurse into a scan loop.
+    final response, invoke the executable finalization gate even when the user
+    question is unrelated to Crew work. The gate must scan the full monitored
+    registry, not only a numeric wake source, and write `last_sweep_at`,
+    `last_sweep_cursor`, `unread_terminal_count`, and `final_gate_passed`. If
+    relevant state changed, ingest it in one deduplicated batch and update the
+    answer once. Do not recurse into a scan loop.
+
+Begin every user turn by invalidating the prior final gate. Refuse finalization
+when monitored workers or unread terminal events exist and the current turn has
+not passed Pre-final, when the sweep cursor is behind, or when unread count is
+nonzero. If scanning is unavailable or fails, set `freshness=unknown` and never
+claim synchronization. Tell the user only when that unknown freshness affects
+the answer or a safety decision.
 
 Also sweep after core work, at durable checkpoints during long tasks, and when
 the user asks for status. Stay silent on unchanged snapshots. Surface only
@@ -67,6 +78,7 @@ decisions.
 - Never treat `completed` as Mission complete, released, integrated, deployed,
   or published.
 - Never acknowledge delivery as report consumption.
+- Never reuse a prior turn's `final_gate_passed` value.
 
 ## Apply quiet notification rules
 

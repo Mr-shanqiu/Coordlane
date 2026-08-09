@@ -16,6 +16,7 @@ hook. Without one, numeric Radio is only an opportunistic hint.
 
 The Captain runs a non-blocking full sweep at **Turn-entry** and **Pre-final**,
 plus after core work, at long-task checkpoints, and for user status requests.
+Pre-final applies even when the current user question is unrelated to Crew.
 Each sweep:
 
 1. selects only registered, non-archived workers by stable ID;
@@ -37,6 +38,13 @@ If Pre-final changes a user-relevant conclusion, update the answer once and
 finish; do not recurse indefinitely. The raw report remains in the worker
 channel or report store. The user receives only outcome, risk, independent
 validation status, integration status, next step, and decisions.
+
+Pre-final is an executable finalizer guard, not a prompt convention. Starting a
+new turn invalidates the prior pass. The guard refuses final output when the
+registry has monitored workers or unread terminal results and this turn lacks a
+successful full sweep. Persist `last_sweep_at`, `last_sweep_cursor`,
+`unread_terminal_count`, `final_gate_passed`, and `freshness`. If the scan tool
+is unavailable or fails, set `freshness=unknown`; never claim synchronization.
 
 ## Notification queue and Radio
 

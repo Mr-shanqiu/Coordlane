@@ -58,3 +58,14 @@ A user steering a worker produces `origin=user_direct` and may supersede the
 coordinator assignment. A changed truth source or dependency invalidates
 downstream scope; affected workstreams become `stale` until the Captain issues
 a new `scope_version` and, for writes, a new `ownership_epoch`.
+
+## Finalization freshness
+
+```text
+turn begins -> final gate invalidated -> ordinary work -> pre-final full sweep
+-> fresh and no unread terminal revisions -> final gate passed -> final allowed
+```
+
+Any new durable report or event invalidates the gate. Missing or failed scan
+sets `freshness=unknown`. A gate from a prior turn, a cursor behind the event
+sequence, or a nonzero unread terminal count cannot authorize final output.

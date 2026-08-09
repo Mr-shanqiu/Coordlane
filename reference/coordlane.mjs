@@ -128,6 +128,11 @@ export const initProject = (root, projectId, options = {}) => {
     schema_version: SCHEMA_VERSION,
     project_id: projectId,
     event_sequence: 0,
+    freshness: "unknown",
+    last_sweep_at: null,
+    last_sweep_cursor: 0,
+    unread_terminal_count: 0,
+    final_gate_passed: false,
     workers: []
   });
   atomicWriteJson(paths.ownership, {
@@ -195,6 +200,7 @@ export const createWorker = (root, input) => {
     status_cursor: null,
     active_assignment_id: null,
     origin: null,
+    monitored: input.monitored ?? true,
     archived: false,
     registry_revision: registry.registry_revision + 1
   };
@@ -204,6 +210,8 @@ export const createWorker = (root, input) => {
 
   const ledger = readJson(paths.ledger);
   workerLedger(ledger, input.worker_id);
+  ledger.freshness = "stale";
+  ledger.final_gate_passed = false;
   atomicWriteJson(paths.ledger, ledger);
   return worker;
 };
@@ -578,6 +586,7 @@ export const persistReport = (root, input) => {
   transition(assignment, input.content.status, ASSIGNMENT_TRANSITIONS, "assignment");
   assignment.worker_report_revision = revision;
   atomicWriteJson(assignmentPath(root, assignment.assignment_id), assignment);
+  invalidateFinalGate(root);
   return report;
 };
 
@@ -617,9 +626,35 @@ const reportFiles = (root) => {
   return walk(directory).sort();
 };
 
+const monitoredWorkers = (root) =>
+  registryFor(root).workers.filter((worker) => worker.monitored !== false && !worker.archived);
+
+const countUnreadTerminal = (root, ledger = ledgerFor(root)) => {
+  const monitored = new Set(monitoredWorkers(root).map((worker) => worker.worker_id));
+  return reportFiles(root)
+    .map((filePath) => readJson(filePath))
+    .filter((report) => {
+      if (!monitored.has(report.worker_id)) return false;
+      const entry = workerLedger(ledger, report.worker_id);
+      return report.report_revision > entry.last_consumed_revision;
+    }).length;
+};
+
+const invalidateFinalGate = (root, requestedFreshness = "stale") => {
+  const paths = requireStore(root);
+  const ledger = readJson(paths.ledger);
+  ledger.unread_terminal_count = countUnreadTerminal(root, ledger);
+  ledger.final_gate_passed = false;
+  ledger.freshness = requestedFreshness;
+  atomicWriteJson(paths.ledger, ledger);
+  return ledger;
+};
+
+export const beginTurn = (root) => invalidateFinalGate(root, "stale");
+
 const recoverDurableReports = (root) => {
   const registered = new Set(
-    registryFor(root).workers.filter((worker) => !worker.archived).map((worker) => worker.worker_id)
+    monitoredWorkers(root).map((worker) => worker.worker_id)
   );
   const known = new Set(eventFiles(root).map((filePath) => readJson(filePath).idempotency_key));
   const recovered = [];
@@ -657,6 +692,8 @@ export const emitEvent = (root, input) => {
   const paths = requireStore(root);
   const ledger = readJson(paths.ledger);
   ledger.event_sequence += 1;
+  ledger.freshness = "stale";
+  ledger.final_gate_passed = false;
   const project = projectFor(root);
   const worker = readWorker(root, input.worker_id);
   const event = {
@@ -724,7 +761,7 @@ const verifyEventReport = (root, event) => {
 };
 
 export const waitWorker = (root, cursors = {}) => {
-  const workers = registryFor(root).workers.filter((worker) => !worker.archived);
+  const workers = monitoredWorkers(root);
   for (const worker of workers) {
     const cursor = Number(cursors[worker.worker_id] ?? 0);
     const changed = eventFiles(root)
@@ -776,7 +813,7 @@ export const fullSweep = (root, options = {}) => {
   const highWatermark = ledger.event_sequence;
   const consumed = [];
   const batchSize = options.batch_size ?? 50;
-  for (const worker of registry.workers.filter((item) => !item.archived)) {
+  for (const worker of registry.workers.filter((item) => item.monitored !== false && !item.archived)) {
     const entry = workerLedger(ledger, worker.worker_id);
     while (true) {
       const batch = scanEvents(root, worker.worker_id, entry.last_seen_cursor, highWatermark, batchSize);
@@ -804,6 +841,10 @@ export const fullSweep = (root, options = {}) => {
       }
     }
   }
+  ledger.last_sweep_at = now();
+  ledger.last_sweep_cursor = highWatermark;
+  ledger.unread_terminal_count = countUnreadTerminal(root, ledger);
+  ledger.freshness = ledger.unread_terminal_count === 0 ? "fresh" : "stale";
   atomicWriteJson(paths.ledger, ledger);
   return {
     scan_status: "complete",
@@ -811,6 +852,68 @@ export const fullSweep = (root, options = {}) => {
     recovered,
     consumed,
     unchanged: consumed.length === 0
+  };
+};
+
+export const preFinalGate = (root, options = {}) => {
+  if (options.scan_available === false) {
+    const ledger = invalidateFinalGate(root, "unknown");
+    return {
+      scan_status: "unavailable",
+      freshness: ledger.freshness,
+      final_gate_passed: false,
+      unread_terminal_count: ledger.unread_terminal_count,
+      consumed: []
+    };
+  }
+  try {
+    const sweep = fullSweep(root, options);
+    const paths = requireStore(root);
+    const ledger = readJson(paths.ledger);
+    ledger.unread_terminal_count = countUnreadTerminal(root, ledger);
+    ledger.final_gate_passed =
+      ledger.freshness === "fresh" &&
+      ledger.unread_terminal_count === 0 &&
+      ledger.last_sweep_cursor === ledger.event_sequence;
+    atomicWriteJson(paths.ledger, ledger);
+    return {
+      ...sweep,
+      freshness: ledger.freshness,
+      final_gate_passed: ledger.final_gate_passed,
+      unread_terminal_count: ledger.unread_terminal_count
+    };
+  } catch (error) {
+    const ledger = invalidateFinalGate(root, "unknown");
+    return {
+      scan_status: "failed",
+      freshness: ledger.freshness,
+      final_gate_passed: false,
+      unread_terminal_count: ledger.unread_terminal_count,
+      consumed: [],
+      error: error.message
+    };
+  }
+};
+
+export const assertFinalizable = (root) => {
+  const ledger = ledgerFor(root);
+  const monitored = monitoredWorkers(root).length;
+  const unread = countUnreadTerminal(root, ledger);
+  if (monitored === 0 && unread === 0) return { allowed: true, reason: "no_monitored_workers" };
+  if (!ledger.final_gate_passed || ledger.freshness !== "fresh" ||
+    unread !== 0 || ledger.last_sweep_cursor !== ledger.event_sequence) {
+    throw new Error(
+      `Finalization refused: freshness=${ledger.freshness}, ` +
+      `final_gate_passed=${ledger.final_gate_passed}, unread_terminal_count=${unread}`
+    );
+  }
+  return {
+    allowed: true,
+    freshness: ledger.freshness,
+    last_sweep_at: ledger.last_sweep_at,
+    last_sweep_cursor: ledger.last_sweep_cursor,
+    unread_terminal_count: unread,
+    final_gate_passed: true
   };
 };
 
@@ -974,6 +1077,26 @@ const main = () => {
     console.log(JSON.stringify(fullSweep(path.resolve(root)), null, 2));
     return;
   }
+  if (command === "begin-turn") {
+    const [root] = args;
+    if (!root) throw new Error("Usage: coordlane-ref begin-turn <state-dir>");
+    console.log(JSON.stringify(beginTurn(path.resolve(root)), null, 2));
+    return;
+  }
+  if (command === "pre-final") {
+    const [root] = args;
+    if (!root) throw new Error("Usage: coordlane-ref pre-final <state-dir>");
+    const result = preFinalGate(path.resolve(root));
+    console.log(JSON.stringify(result, null, 2));
+    if (!result.final_gate_passed) process.exitCode = 2;
+    return;
+  }
+  if (command === "finalize") {
+    const [root] = args;
+    if (!root) throw new Error("Usage: coordlane-ref finalize <state-dir>");
+    console.log(JSON.stringify(assertFinalizable(path.resolve(root)), null, 2));
+    return;
+  }
   if (command === "status") {
     const [root] = args;
     if (!root) throw new Error("Usage: coordlane-ref status <state-dir>");
@@ -985,7 +1108,7 @@ const main = () => {
     }, null, 2));
     return;
   }
-  throw new Error("Usage: coordlane-ref <init|sweep|status> ...");
+  throw new Error("Usage: coordlane-ref <init|begin-turn|sweep|pre-final|finalize|status> ...");
 };
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {

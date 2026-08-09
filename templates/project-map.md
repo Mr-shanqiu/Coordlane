@@ -34,6 +34,14 @@ Titles are display-only and must not be used for routing.
 | Worker | Last cursor | Discovered revision | Consumed revision | Validated revision | Pending priority |
 | --- | --- | --- | --- | --- | --- |
 
+Finalization freshness:
+
+- `freshness`:
+- `last_sweep_at`:
+- `last_sweep_cursor`:
+- `unread_terminal_count`:
+- `final_gate_passed`:
+
 ## Integration ledger
 
 | Assignment | Policy | Worker source commit | Integrated commit | Captain checks | Release state |

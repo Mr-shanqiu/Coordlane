@@ -20,6 +20,7 @@ acceptance is complete.
 | Durable report | Completed task record; optional filesystem report artifact | Level 2 adapter rule |
 | Notification after durable report | Directed message before final only when artifact already exists | Opportunistic |
 | Per-task full sweep | Iterate registered tasks with individual cursors | Required completeness gate |
+| Executable Pre-final guard | Reference state store records freshness and refuses stale finalization | Locally verified; host wrapper required |
 | Task archive | Archive tool available | Native after close gates |
 | Worktree isolation | Available for eligible project tasks | Native with creation-policy gate |
 | Automatic integration or Launch | Intentionally absent | Prohibited |

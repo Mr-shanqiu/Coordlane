@@ -10,6 +10,9 @@ Last audited: 2026-08-09
   validation, branch-policy checks, release, and recovery.
 - Fifteen executable failure-scenario tests covering the field failures in the
   protocol upgrade.
+- Executable `beginTurn`, `preFinalGate`, and `assertFinalizable` guards,
+  including the four-simultaneous-completion incident and scan-unavailable
+  regression.
 - Prompt templates and a portable Skill with safe-point coordination rules.
 
 ## Codex mapping with incomplete live acceptance

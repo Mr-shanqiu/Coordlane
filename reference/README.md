@@ -6,8 +6,11 @@ but intentionally not a server or production orchestration platform.
 
 ```sh
 node reference/coordlane.mjs init work/demo-state fictional-library
+node reference/coordlane.mjs begin-turn work/demo-state
 node reference/coordlane.mjs status work/demo-state
 node reference/coordlane.mjs sweep work/demo-state
+node reference/coordlane.mjs pre-final work/demo-state
+node reference/coordlane.mjs finalize work/demo-state
 ```
 
 The exported module implements worker registration, identity-bound assignment
@@ -15,6 +18,11 @@ delivery and acknowledgement, ownership preflight, atomic durable reports,
 digest-bound idempotent events, lost-event recovery, per-worker cursor sweeps,
 Captain validation, branch-policy enforcement, ownership release, and worker
 archival.
+
+`begin-turn` invalidates any prior final gate. `pre-final` performs the bounded
+full sweep and writes freshness fields. `finalize` exits unsuccessfully when a
+monitored registry has no current gate pass, the cursor is behind, unread
+terminal reports remain, or freshness is unknown.
 
 State is stored under the chosen directory:
 

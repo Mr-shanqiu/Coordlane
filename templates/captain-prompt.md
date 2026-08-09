@@ -38,8 +38,14 @@ steps, and decisions—never a raw report unless explicitly requested.
    `persistent-merge`. Record source and integrated commit. Never auto-reset,
    rebase, force, deploy, migrate, release, or change runtime switches.
 9. Release ownership and close only after every release-evidence field passes.
-10. Before the final response, run the Pre-final non-blocking full sweep. If it
-    changes the conclusion, update the answer once; do not scan recursively.
+10. Invalidate the old final gate at the start of every user turn. Before every
+    final response—even for a question unrelated to Crew—invoke the executable
+    Pre-final gate over the complete monitored registry. Record
+    `last_sweep_at`, `last_sweep_cursor`, `unread_terminal_count`,
+    `final_gate_passed`, and freshness. Refuse finalization when the gate did
+    not run, is behind, has unread terminal results, or freshness is unknown.
+    Batch and deduplicate ingestion, update the answer once, and never paste a
+    raw report or scan recursively.
 
 Use `{project_map}`, `{state_store}`, and the verified adapter at `{adapter}`.
 When host capability is unknown, downgrade to filesystem polling or manual

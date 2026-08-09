@@ -66,6 +66,11 @@ terminal results wait for a safe point. P2 progress is query-only. The user
 sees curated outcomes, risk, validation status, integration status, next step,
 and decisions—not raw Crew reports.
 
+The finalizer enforces this mechanically. `beginTurn` invalidates the previous
+pass; `preFinalGate` runs a bounded registry-wide sweep and records freshness;
+`assertFinalizable` rejects output if the gate is missing, stale, unknown, or
+has unread terminal revisions. Topic relevance never bypasses this guard.
+
 ## Security and resource model
 
 Coordlane treats worker reports as untrusted claims until the Captain checks

@@ -42,7 +42,9 @@ for (const term of [
   "timeoutMs=0",
   "first change",
   "full sweep",
-  "after final"
+  "after final",
+  "final_gate_passed",
+  "freshness=unknown"
 ]) {
   assert.ok(codexReadme.includes(term), `Codex adapter is missing: ${term}`);
 }

@@ -2,6 +2,11 @@
   "schema_version": "1.0.0",
   "project_id": "fictional-library",
   "event_sequence": 1,
+  "freshness": "fresh",
+  "last_sweep_at": "2026-08-09T00:01:00.000Z",
+  "last_sweep_cursor": 1,
+  "unread_terminal_count": 0,
+  "final_gate_passed": true,
   "workers": [
     {
       "worker_id": "20",

@@ -21,6 +21,8 @@ Coordlane 是一套本地优先的协作协议和 Codex Skill，用一个 Captai
 - 终态报告先持久化，再以 revision 和 digest 绑定通知。
 - 在回合开始和回复前执行全量排空扫描，即使编号通知丢失、过早或 final 后
   无法发送，也能发现结果。
+- 可执行 finalizer 会拒绝缺少本回合全 registry 扫描、freshness 未知或仍有
+  未读终态结果的 final 输出。
 - Crew 自报测试与 Captain 独立复验分开。
 - 显式选择临时 cherry-pick 或长期 merge 分支策略，禁止混用。
 - 记录来源提交与合流提交；“完成”不等于释放、上线或整个 Mission 完成。
@@ -82,6 +84,9 @@ Coordlane 按 Level 2 运行：
 5. 多目标 wait 只用于发现第一个变化，不能代替 full sweep；
 6. 只消费已持久化且 revision、digest 匹配的报告；
 7. 纯编号只能是可选提示，不能作为真相源或完整性保证。
+
+Pre-final 门禁适用于每一次回答，即使本轮问题与 Crew 无关。扫描失败时必须
+记录 `freshness=unknown`，不得声称已经同步。
 
 ## 当前边界
 

@@ -7,7 +7,7 @@ Seven JSON Schemas define Coordlane's current records:
 - `registry.schema.json`: stable worker routing, capabilities, cursor, and
   archive state;
 - `ledger.schema.json`: per-worker discovery, consumption, and validation
-  revisions;
+  revisions plus finalization freshness and gate evidence;
 - `event.schema.json`: metadata-only, digest-bound notification events;
 - `report.schema.json`: immutable terminal evidence plus lifecycle and Captain
   validation envelopes;

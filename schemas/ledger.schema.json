@@ -4,11 +4,16 @@
   "title": "Coordlane coordinator consumption ledger",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "project_id", "event_sequence", "workers"],
+  "required": ["schema_version", "project_id", "event_sequence", "freshness", "last_sweep_at", "last_sweep_cursor", "unread_terminal_count", "final_gate_passed", "workers"],
   "properties": {
     "schema_version": { "const": "1.0.0" },
     "project_id": { "$ref": "#/$defs/id" },
     "event_sequence": { "type": "integer", "minimum": 0 },
+    "freshness": { "enum": ["fresh", "stale", "unknown"] },
+    "last_sweep_at": { "type": ["string", "null"], "format": "date-time" },
+    "last_sweep_cursor": { "type": "integer", "minimum": 0 },
+    "unread_terminal_count": { "type": "integer", "minimum": 0 },
+    "final_gate_passed": { "type": "boolean" },
     "workers": {
       "type": "array",
       "items": {

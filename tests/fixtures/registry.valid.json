@@ -16,6 +16,7 @@
       "status_cursor": null,
       "active_assignment_id": null,
       "origin": null,
+      "monitored": true,
       "archived": false,
       "registry_revision": 1
     }

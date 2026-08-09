@@ -14,7 +14,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["worker_id", "role_id", "thread_id", "host_id", "title", "workspace", "branch", "branch_policy", "capabilities", "status_cursor", "active_assignment_id", "origin", "archived", "registry_revision"],
+        "required": ["worker_id", "role_id", "thread_id", "host_id", "title", "workspace", "branch", "branch_policy", "capabilities", "status_cursor", "active_assignment_id", "origin", "monitored", "archived", "registry_revision"],
         "properties": {
           "worker_id": { "$ref": "#/$defs/id" },
           "role_id": { "$ref": "#/$defs/id" },
@@ -28,6 +28,7 @@
           "status_cursor": { "type": ["string", "integer", "null"] },
           "active_assignment_id": { "oneOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
           "origin": { "enum": ["coordinator", "user_direct", "external", null] },
+          "monitored": { "type": "boolean" },
           "archived": { "type": "boolean" },
           "registry_revision": { "type": "integer", "minimum": 1 }
         }
