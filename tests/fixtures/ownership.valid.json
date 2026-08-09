@@ -1,9 +1,14 @@
 {
+  "schema_version": "1.0.0",
   "mission_id": "fictional-library",
   "claims": [
     {
+      "claim_id": "claim-search-01",
+      "assignment_id": "assign-search-01",
       "resource": "src/search.js",
+      "canonical_resource": "src/search.js",
       "owner": "20",
+      "ownership_epoch": 1,
       "mode": "exclusive",
       "state": "active",
       "release": {

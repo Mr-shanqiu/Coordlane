@@ -1,5 +1,8 @@
 # Claude Code adapter
 
+> Deferred research note. This adapter is not active, implemented, or tested in
+> the current Codex-only phase. Do not claim compatibility from this file.
+
 ## Classification
 
 - Skills and subagents: **Native**.

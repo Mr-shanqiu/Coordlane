@@ -1,21 +1,32 @@
 {
-  "id": "20",
+  "schema_version": "1.0.0",
+  "id": "search",
   "mission_id": "fictional-library",
   "title": "Catalog search",
   "objective": "Implement local catalog search without changing the app entry point",
   "acceptance_criteria": ["Title and author filters pass unit tests"],
   "captain": "00",
   "crew": "20",
+  "scope_version": 1,
+  "ownership_epoch": 1,
   "workspace": {
-    "path": "/workspace/library-search",
-    "branch": "crew/20-search",
-    "baseline_head": "abc1234"
+    "path": "/workspace/fictional-library-search",
+    "branch": "work/search",
+    "baseline_head": "1111111111111111111111111111111111111111"
   },
   "owned_paths": ["src/search.js", "tests/search.test.js"],
   "forbidden_paths": ["src/app.js"],
   "shared_entrypoints": ["src/app.js"],
   "dependencies": [],
   "gates": ["search-tests"],
+  "branch_policy": "ephemeral-cherry-pick",
+  "execution_mode": "write",
+  "budgets": {
+    "token_limit": 4000,
+    "cpu": "low",
+    "network": "none",
+    "external_calls": []
+  },
   "external_side_effects_allowed": false,
   "stop_conditions": ["Stop if an owned path is already dirty"],
   "status": "ready"

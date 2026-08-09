@@ -1,48 +1,29 @@
-# Phase 2 plan
+# Next-stage plan
 
-Phase 2 should remain protocol-first. It must not introduce a server, daemon,
-telemetry, automatic merge, or automatic deployment.
+Do not begin another platform adapter until Codex acceptance is complete.
 
-## 1. Tagged-release readiness
+## 1. Codex live acceptance
 
-- Repeat exact-name searches for `Coordlane` across GitHub, package registries,
-  Skill catalogs, and the general web.
-- Confirm the public repository remains under the approved owner and name.
-- Obtain appropriate trademark or legal review if the project will become a
-  commercial brand.
-- Add contribution and security-reporting guidance before accepting external
-  submissions.
+- With explicit user authorization, create synthetic user-owned test tasks in
+  an isolated fictional project.
+- Verify create, delivery, ACK readback, user-direct steering detection,
+  per-task cursor scans, two simultaneous completions, archive, and worktree
+  identity on the exact desktop version.
+- Test standalone Skill installation and implicit/explicit triggering.
+- Compare repository ledger state before and after a Captain restart.
+- Downgrade any mapping that lacks repeatable evidence.
 
-## 2. Adapter acceptance
+## 2. Codex packaging readiness
 
-- Record exact product versions and surfaces.
-- Install and trigger the Skill in Codex, Claude Code, CodeBuddy, and WorkBuddy.
-- Test only documented primitives: create, status, bounded read/wait, directed
-  message, shutdown, and recovery where available.
-- Downgrade any capability that lacks repeatable evidence.
-- Keep WorkBuddy on Manual/Polling until official lifecycle evidence exists.
+- Add contribution and security-reporting guidance.
+- Repeat exact-name and prior-art checks before a tagged release.
+- Decide whether the Skill alone is sufficient; add no plugin or hook unless a
+  concrete Codex installation need justifies it.
+- Create no release until the user approves live evidence and release gates.
 
-## 3. Protocol fixtures
+## 3. Deferred platform expansion
 
-- Add a complete Mission document and dependency Chart Schema.
-- Add semantic validation for normalized filesystem overlap and duplicate
-  external-resource claims.
-- Add negative fixtures for premature release, unapproved side effects, cyclic
-  dependencies, and shared-entry-point conflicts.
-- Decide how schema versions and compatibility will be published.
-
-## 4. Documentation acceptance
-
-- Run the fictional example end to end in at least two different hosts.
-- Add screenshots or transcripts only from synthetic data.
-- Verify English and Chinese documents describe the same normative boundary.
-- Add an explicit comparison page that avoids superiority claims and cites
-  dated sources.
-
-## 5. Distribution decision
-
-- Keep the Skill standalone if that is sufficient.
-- Consider a plugin only if installation metadata or reviewed adapters require
-  one; do not bundle hooks by default.
-- Create a tagged release only after the user approves the cross-host evidence
-  and all release gates above.
+Only after steps 1 and 2 pass, select one additional platform, reread its
+current official documentation, build one adapter against the common interface,
+and run the same conformance suite. Existing non-Codex notes are research input,
+not an implementation baseline.

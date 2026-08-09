@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/Mr-shanqiu/Coordlane/main/schemas/ledger.schema.json",
+  "title": "Coordlane coordinator consumption ledger",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project_id", "event_sequence", "workers"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "project_id": { "$ref": "#/$defs/id" },
+    "event_sequence": { "type": "integer", "minimum": 0 },
+    "workers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["worker_id", "last_seen_cursor", "last_discovered_revision", "last_consumed_revision", "last_validated_revision", "active_assignment_id", "origin", "consumed_event_ids"],
+        "properties": {
+          "worker_id": { "$ref": "#/$defs/id" },
+          "last_seen_cursor": { "type": "integer", "minimum": 0 },
+          "last_discovered_revision": { "type": "integer", "minimum": 0 },
+          "last_consumed_revision": { "type": "integer", "minimum": 0 },
+          "last_validated_revision": { "type": "integer", "minimum": 0 },
+          "active_assignment_id": { "oneOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
+          "origin": { "enum": ["coordinator", "user_direct", "external"] },
+          "consumed_event_ids": { "type": "array", "items": { "$ref": "#/$defs/nonEmpty" }, "uniqueItems": true }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+    "nonEmpty": { "type": "string", "minLength": 1 }
+  }
+}

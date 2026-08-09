@@ -1,5 +1,8 @@
 # WorkBuddy adapter
 
+> Deferred research note. This adapter is not active, implemented, or tested in
+> the current Codex-only phase. Do not claim compatibility from this file.
+
 ## Classification
 
 - Custom Skills: **Native at the product level**.

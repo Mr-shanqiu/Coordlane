@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/Mr-shanqiu/Coordlane/main/schemas/event.schema.json",
+  "title": "Coordlane coordinator notification event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "event_id", "idempotency_key", "sequence", "project_id",
+    "worker_id", "thread_id", "host_id", "assignment_id", "event_type",
+    "priority", "report_revision", "report_digest", "workspace", "branch",
+    "head", "created_at", "requires_user_decision", "status", "delivered_at",
+    "acknowledged_at", "user_interrupted"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "event_id": { "$ref": "#/$defs/nonEmpty" },
+    "idempotency_key": { "$ref": "#/$defs/nonEmpty" },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "project_id": { "$ref": "#/$defs/id" },
+    "worker_id": { "$ref": "#/$defs/id" },
+    "thread_id": { "$ref": "#/$defs/nonEmpty" },
+    "host_id": { "$ref": "#/$defs/nonEmpty" },
+    "assignment_id": { "$ref": "#/$defs/id" },
+    "event_type": { "enum": ["completed", "blocked", "decision_needed", "failed"] },
+    "priority": { "enum": ["P0", "P1", "P2"] },
+    "report_revision": { "type": "integer", "minimum": 1 },
+    "report_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "workspace": { "$ref": "#/$defs/nonEmpty" },
+    "branch": { "$ref": "#/$defs/nonEmpty" },
+    "head": { "$ref": "#/$defs/nonEmpty" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "requires_user_decision": { "type": "boolean" },
+    "status": { "enum": ["pending", "delivered", "acknowledged"] },
+    "delivered_at": { "type": ["string", "null"], "format": "date-time" },
+    "acknowledged_at": { "type": ["string", "null"], "format": "date-time" },
+    "user_interrupted": { "const": false }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+    "nonEmpty": { "type": "string", "minLength": 1 }
+  }
+}

@@ -1,15 +1,14 @@
 # Platform adapters
 
-Adapters translate the platform-independent protocol in [`core/`](../core/)
-into host capabilities. They are informative, not normative.
+The current implementation phase supports only
+[`codex/`](codex/README.md). It maps current Codex desktop task primitives to
+the platform-neutral interface in [`interface.md`](interface.md).
 
-Before using an adapter:
+Directories for Claude Code, CodeBuddy, WorkBuddy, and Generic preserve earlier
+research notes only. They are not active adapters, are excluded from current
+compatibility claims and tests, and must not be presented as supported. They
+will be revisited only after Codex conformance testing is complete.
 
-1. identify the exact product surface and installed version;
-2. confirm the named capabilities exist in the current session;
-3. keep experimental and host-private capabilities labeled;
-4. review any hook before enabling it; and
-5. fall back to Generic whenever a claim cannot be verified.
-
-Capability levels are Native, Hook-assisted, Polling, and Manual. See the
-[dated matrix](../docs/research/capability-matrix.md).
+Before using any adapter, verify the exact product surface and installed
+version, stable identity, completion semantics, cursor behavior, workspace
+isolation, and fallback. Unknown capability is unavailable, not Native.

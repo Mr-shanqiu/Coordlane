@@ -1,60 +1,40 @@
-# Mission project map
+# Coordlane project map
 
 ## Mission
 
-- ID:
-- Objective:
-- Acceptance criteria:
-- Constraints:
-- Captain:
-- User-granted authority:
-- Prohibited external actions:
+- ID / objective / acceptance:
+- Authoritative truth sources:
+- User authority and prohibited actions:
+- Dock and Launch gates:
 
-## Baseline
+## Stable registry
 
-- Workspace or repository:
-- Branch / HEAD:
-- Dirty-state summary:
-- Authoritative instructions:
-- Shared entry points:
-- Runtime State:
+| Worker | Role | Thread ID | Host ID | Workspace | Branch policy | Cursor | Origin | Active assignment | Archived |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 
-## Workstreams
+Titles are display-only and must not be used for routing.
 
-| ID | Crew | Objective | Workspace / branch | Owned scope | Dependencies | Gates | Status |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 00 |  |  |  |  |  |  | planned |
+## Assignments and dependencies
 
-## Formal execution session registry
-
-Only rows marked formal and not archived participate in the Captain's dual
-turn gate.
-
-| Crew ID | Stable session handle | Formal | Archived | Last cursor / revision | Last observed state |
-| --- | --- | --- | --- | --- | --- |
-| 00 |  | yes | no |  | planned |
+| Assignment | Parent decision | Scope version | Attempt | Worker | Origin | Dependencies | Status | Report revision | Captain disposition |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 
 ## Ownership
 
-| Path or resource | Owner | Mode | State | Release evidence |
-| --- | --- | --- | --- | --- |
-|  |  | exclusive | reserved |  |
+| Canonical resource | Owner | Assignment | Epoch | Mode | State | Shared-entry handoff |
+| --- | --- | --- | --- | --- | --- | --- |
 
-## Dependency chart
+## Runtime and budgets
 
-Record each edge as `{upstream} -> {downstream}: {required artifact or evidence}`.
+| Assignment | Token | CPU | Network | External calls | Runtime switches | Cleanup |
+| --- | --- | --- | --- | --- | --- | --- |
 
-## Gates and decisions
+## Event consumption
 
-| ID | Type | Condition | Evidence | Owner | State |
+| Worker | Last cursor | Discovered revision | Consumed revision | Validated revision | Pending priority |
 | --- | --- | --- | --- | --- | --- |
-|  | baseline |  |  | Captain | open |
 
-## Dock and Launch
+## Integration ledger
 
-- Integration owner:
-- Combined verification:
-- Release state:
-- Launch target:
-- Approval state:
-- Rollback or recovery:
+| Assignment | Policy | Worker source commit | Integrated commit | Captain checks | Release state |
+| --- | --- | --- | --- | --- | --- |

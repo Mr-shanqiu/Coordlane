@@ -1,5 +1,8 @@
 # Generic prompt adapter
 
+> Deferred fallback note. This path is not part of current Codex-only
+> conformance testing and is not an active compatibility claim.
+
 ## Classification
 
 **Manual.** No session, hook, messaging, or status API is assumed.

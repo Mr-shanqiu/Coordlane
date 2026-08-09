@@ -1,29 +1,55 @@
 {
-  "crew_id": "20",
-  "status": "completed",
-  "task": "Add search to the fictional library catalog",
-  "workspace": {
-    "path": "/workspace/library-search",
-    "branch": "crew/20-search",
-    "head": "abc1234"
+  "schema_version": "1.0.0",
+  "project_id": "fictional-library",
+  "worker_id": "20",
+  "assignment_id": "assign-search-01",
+  "attempt_id": "assign-search-01.r1",
+  "ownership_epoch": 1,
+  "report_revision": 1,
+  "report_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "content": {
+    "status": "completed",
+    "objective": "Add local catalog search",
+    "workspace": {
+      "path": "/workspace/fictional-library-search",
+      "branch": "work/search",
+      "head": "1111111111111111111111111111111111111111"
+    },
+    "completed_work": ["Added title and author filters"],
+    "commit": "2222222222222222222222222222222222222222",
+    "worker_validation": [
+      {
+        "check": "unit tests",
+        "command": "node --test",
+        "result": "passed",
+        "evidence": "4 passed",
+        "subject_head": "1111111111111111111111111111111111111111"
+      }
+    ],
+    "modified_or_owned_files": ["src/search.js", "tests/search.test.js"],
+    "shared_overlaps": [],
+    "runtime_state": {
+      "external_side_effects": [],
+      "running_processes": [],
+      "switches": [],
+      "cleanup": "No process started"
+    },
+    "secrets_exposure": {
+      "status": "none",
+      "details": "No secrets read or written"
+    },
+    "blockers": [],
+    "decisions_needed": [],
+    "recommended_next_action": "Captain independently validates the change"
   },
-  "completed_work": ["Added title and author filters"],
-  "commit": "def5678",
-  "validation": [
-    {
-      "check": "npm test",
-      "result": "passed",
-      "evidence": "18 tests passed"
-    }
-  ],
-  "modified_or_occupied": ["src/search.js", "tests/search.test.js"],
-  "shared_or_overlap": ["Captain must add the route to src/app.js"],
-  "runtime_state": {
-    "external_side_effects": [],
-    "running_processes": [],
-    "switches": []
+  "lifecycle": {
+    "status": "durable",
+    "durable_at": "2026-08-09T00:00:00.000Z",
+    "notified_at": null,
+    "discovered_at": null,
+    "consumed_at": null,
+    "validated_at": null,
+    "archived_at": null
   },
-  "captain_decision_required": [],
-  "suggested_next_step": "Review and release ownership",
-  "ownership_released": false
+  "coordinator_validation": null
 }

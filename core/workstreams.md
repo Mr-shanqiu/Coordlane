@@ -23,11 +23,13 @@ Every Workstream must define:
 - ID, title, objective, and acceptance criteria;
 - Captain and assigned Crew;
 - workspace, branch, and creation baseline;
+- `assignment_id`, parent decision, scope version, attempt, origin, and
+  ownership epoch;
 - owned paths and forbidden paths;
 - shared entry points that require Captain integration;
 - upstream and downstream dependencies;
 - gates and checkpoints;
-- external-side-effect permission;
+- branch policy, resource budgets, and external-side-effect permission;
 - terminal status rules; and
 - required report format.
 
@@ -36,13 +38,16 @@ machine-readable form.
 
 ## Lifecycle
 
-`planned -> ready -> active -> terminal`
+The Workstream summary is `planned -> ready -> active -> terminal`, while each
+Assignment follows the detailed machine in [`state-machines.md`](state-machines.md).
 
 Terminal is exactly one of:
 
 - `completed`: the authorized Workstream is actually complete;
 - `blocked`: a concrete condition prevents further safe progress; or
 - `decision_needed`: progress requires a Captain or user choice.
+- `failed`: execution ended without satisfying its bounded contract; or
+- `superseded`: a new user direction, scope version, or decision replaced it.
 
 `completed` does not imply release, integration, or Mission completion.
 

@@ -29,3 +29,8 @@ Checkpoint records must not contain secrets or full conversation transcripts.
 Only the Captain changes dependency order, ownership, or gate requirements.
 Crew sessions may propose a change in `decision_needed`, but must not proceed on
 the assumption that the proposal was accepted.
+
+When an upstream truth source, scope, or accepted artifact changes, the Captain
+marks affected downstream Workstreams `stale`. Their prior completion remains
+historical evidence, not current readiness. Writes resume only through a new
+scope version, attempt, dependency disposition, and ownership epoch.

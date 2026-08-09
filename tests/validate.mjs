@@ -4,11 +4,21 @@ import process from "node:process";
 import Ajv2020 from "ajv/dist/2020.js";
 
 const root = process.cwd();
-const ajv = new Ajv2020({ allErrors: true, strict: true });
+const ajv = new Ajv2020({
+  allErrors: true,
+  strict: true,
+  strictRequired: false,
+  allowUnionTypes: true,
+  validateFormats: false
+});
 const pairs = [
+  ["schemas/assignment.schema.json", "tests/fixtures/assignment.valid.json"],
+  ["schemas/event.schema.json", "tests/fixtures/event.valid.json"],
+  ["schemas/ledger.schema.json", "tests/fixtures/ledger.valid.json"],
+  ["schemas/ownership.schema.json", "tests/fixtures/ownership.valid.json"],
+  ["schemas/registry.schema.json", "tests/fixtures/registry.valid.json"],
   ["schemas/report.schema.json", "tests/fixtures/report.valid.json"],
-  ["schemas/workstream.schema.json", "tests/fixtures/workstream.valid.json"],
-  ["schemas/ownership.schema.json", "tests/fixtures/ownership.valid.json"]
+  ["schemas/workstream.schema.json", "tests/fixtures/workstream.valid.json"]
 ];
 const validators = new Map();
 
@@ -35,45 +45,53 @@ if (validateOwnership(invalidRelease)) {
 const duplicateLedger = readJson("tests/fixtures/ownership.valid.json");
 duplicateLedger.claims.push({
   ...structuredClone(duplicateLedger.claims[0]),
+  claim_id: "claim-search-02",
+  assignment_id: "assign-search-02",
   owner: "30"
 });
 const activeResources = new Set();
 let duplicateDetected = false;
 for (const claim of duplicateLedger.claims) {
   if (claim.state === "released") continue;
-  if (activeResources.has(claim.resource)) duplicateDetected = true;
-  activeResources.add(claim.resource);
+  if (activeResources.has(claim.canonical_resource)) duplicateDetected = true;
+  activeResources.add(claim.canonical_resource);
 }
-if (!duplicateDetected) {
-  throw new Error("semantic ownership check missed duplicate active resource claims");
-}
+if (!duplicateDetected) throw new Error("semantic ownership check missed a duplicate active resource");
 
 const validateReport = validators.get("schemas/report.schema.json");
-const invalidReport = readJson("tests/fixtures/report.valid.json");
-invalidReport.ownership_released = true;
-if (validateReport(invalidReport)) {
-  throw new Error("report schema allowed a Crew report to release ownership");
+const falseCompletion = readJson("tests/fixtures/report.valid.json");
+falseCompletion.content.worker_validation[0].result = "failed";
+if (validateReport(falseCompletion)) {
+  throw new Error("report schema accepted completed with failed worker validation");
 }
+const unresolvedCompletion = readJson("tests/fixtures/report.valid.json");
+unresolvedCompletion.content.shared_overlaps.push("src/app.js");
+if (validateReport(unresolvedCompletion)) {
+  throw new Error("report schema accepted completed with unresolved overlap");
+}
+
+const validateEvent = validators.get("schemas/event.schema.json");
+const invalidEvent = readJson("tests/fixtures/event.valid.json");
+invalidEvent.report_digest = "sha256:not-a-digest";
+if (validateEvent(invalidEvent)) throw new Error("event schema accepted an invalid report digest");
 
 const skillPath = path.join(root, "skills/coordlane/SKILL.md");
 const skill = fs.readFileSync(skillPath, "utf8");
 if (!skill.startsWith("---\nname: coordlane\ndescription: ")) {
   throw new Error("Skill frontmatter is missing the expected name and description");
 }
-if (/\bTODO\b|\[TODO/i.test(skill)) {
-  throw new Error("Skill contains unresolved TODO placeholders");
-}
+if (/\bTODO\b|\[TODO/i.test(skill)) throw new Error("Skill contains unresolved TODO placeholders");
 
-const dualGateRequirements = new Map([
-  ["skills/coordlane/SKILL.md", ["turn-entry", "pre-final", "timeoutMs=0", "cursor", "registered", "non-archived", "numeric identifier"]],
-  ["core/handoff.md", ["Turn-entry scan", "Pre-final scan", "timeoutMs=0", "revision", "completeness mechanism", "numeric identifier", "recursive"]],
-  ["templates/captain-prompt.md", ["turn-entry scan", "pre-final scan", "timeoutMs=0", "registered, non-archived", "numeric identifier"]]
+const coordinationRequirements = new Map([
+  ["skills/coordlane/SKILL.md", ["assignment_id", "acknowledgement", "turn-entry", "pre-final", "cursor", "durable", "full sweep", "ownership"]],
+  ["core/handoff.md", ["Turn-entry", "Pre-final", "durable", "report_revision", "idempotency", "numeric"]],
+  ["templates/captain-prompt.md", ["assignment_id", "turn-entry", "pre-final", "full sweep", "raw report"]]
 ]);
-for (const [relativePath, requiredTerms] of dualGateRequirements) {
-  const content = fs.readFileSync(path.join(root, relativePath), "utf8");
+for (const [relativePath, requiredTerms] of coordinationRequirements) {
+  const fileContent = fs.readFileSync(path.join(root, relativePath), "utf8").toLowerCase();
   for (const term of requiredTerms) {
-    if (!content.includes(term)) {
-      throw new Error(`${relativePath} is missing dual-turn-gate term: ${term}`);
+    if (!fileContent.includes(term.toLowerCase())) {
+      throw new Error(`${relativePath} is missing coordination term: ${term}`);
     }
   }
 }
@@ -105,18 +123,15 @@ for (const file of walk(root)) {
   for (const pattern of forbidden) {
     if (pattern.test(text)) throw new Error(`${relative} contains forbidden or sensitive sample data: ${pattern}`);
   }
-
   if (relative.endsWith(".md")) {
     for (const match of text.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)) {
       const rawTarget = match[1].replace(/^<|>$/g, "");
       if (/^(?:https?:|mailto:|#)/.test(rawTarget)) continue;
       const localTarget = decodeURIComponent(rawTarget.split("#", 1)[0]);
       const resolved = path.resolve(path.dirname(file), localTarget);
-      if (!fs.existsSync(resolved)) {
-        throw new Error(`${relative} contains a broken local link: ${rawTarget}`);
-      }
+      if (!fs.existsSync(resolved)) throw new Error(`${relative} contains a broken local link: ${rawTarget}`);
     }
   }
 }
 
-console.log(`Validated ${pairs.length} schemas, negative invariants, dual turn gates, Skill metadata, formatting, local links, and sample-data safety.`);
+console.log(`Validated ${pairs.length} schemas, negative invariants, Skill metadata, protocol terms, formatting, links, and sample-data safety.`);

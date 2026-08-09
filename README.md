@@ -1,78 +1,64 @@
 # Coordlane
 
-> One coordinating brain for organized multi-agent project work.
+> One coordinating brain for safe parallel work, quiet handoffs, and traceable
+> integration across AI tasks.
 
 [简体中文](README.zh-CN.md)
 
-Coordlane is a protocol-first, cross-platform coordination kit for people
-using multiple AI coding or work sessions on one complex mission. It defines
-how a Captain assigns bounded work to Crew sessions, records ownership and
-dependencies, reviews evidence, releases files, and controls integration or
-external side effects.
+Coordlane is a local-first coordination protocol and Codex Skill for complex
+work split across one Captain and multiple bounded Crew tasks. It keeps scope,
+stable identity, dependencies, file ownership, report evidence, validation,
+and integration state explicit—without turning raw worker output into user
+conversation noise.
 
-This repository is an early local-first draft. It does not run a server,
-monitor conversations, store chat data, merge code, or deploy anything.
+The current implementation phase targets **Codex desktop only**. Other platform
+directories are deferred research notes, not support claims.
 
-## Why it exists
+## What it fixes
 
-Parallel AI sessions make execution faster, but they also introduce familiar
-coordination failures: duplicate edits, unclear responsibility, hidden
-dependencies, noisy handoffs, premature declarations of completion, and work
-that was never tested, committed, or safely released.
+- Message delivery is separated from target acknowledgement.
+- Stable `thread_id + host_id` replaces unreliable title routing.
+- Assignment origin prevents Captain dispatch from overwriting user-direct
+  work.
+- Exclusive ownership and dependency preflight block unsafe parallel writes.
+- Terminal reports are revisioned, digest-bound, and durable before events.
+- Turn-entry and pre-final full sweeps discover results even when wake messages
+  are lost, early, or impossible after final output.
+- Captain verification is separate from worker-reported tests.
+- Explicit branch policy prevents cherry-pick and persistent-workstream history
+  from being mixed.
+- Integration records worker and integrated commits; completion never implies
+  release, deployment, or Mission completion.
 
-Coordlane treats coordination as an explicit project contract instead of
-an informal stream of chat messages.
+## Architecture
 
-## The model
+Coordlane uses a **Captain** as the user-facing coordinating brain and **Crew**
+as bounded execution tasks. The **Chart** tracks Workstreams and dependencies;
+the **Logbook** stores structured evidence; **Dock** is controlled integration;
+**Launch** is an explicitly authorized migration, deployment, or release.
+**Radio** is only an optional transport hint.
 
-- **Mission** — the final outcome and acceptance boundary.
-- **Captain** — the single coordination authority and user-facing interface.
-- **Crew** — bounded specialist sessions that execute one Workstream.
-- **Chart** — the dependency graph and route to completion.
-- **Logbook** — structured reports and recorded evidence.
-- **Radio** — optional low-interruption terminal notifications.
-- **Checkpoint** — a verified safe stopping point.
-- **Dock** — controlled integration after ownership is released.
-- **Launch** — an explicitly authorized migration, deployment, or release.
+Read the [architecture](docs/architecture.md),
+[state machines](core/state-machines.md),
+[event protocol](core/events.md),
+[ownership rules](core/ownership.md), and
+[branch policy](core/branch-policy.md).
 
-The normative rules live in [`core/`](core/). Platform behavior belongs only
-in [`adapters/`](adapters/), and machine-readable records live in
-[`schemas/`](schemas/).
+## Current runnable surface
 
-## V1 scope
+- a portable [`coordlane` Skill](skills/coordlane/SKILL.md);
+- Captain, Crew, report, and project-map [`templates/`](templates/);
+- seven machine-readable [`schemas/`](schemas/);
+- a Node.js standard-library [filesystem reference](reference/README.md);
+- a current-host [Codex desktop adapter](adapters/codex/README.md); and
+- 15 executable failure-scenario tests plus schema, formatting, link, sample
+  safety, and adapter-contract checks.
 
-V1 provides:
-
-- a portable `coordlane` Skill;
-- Captain and Crew prompt templates;
-- ownership, dependency, report, handoff, and release-gate protocols;
-- JSON Schemas for workstreams, ownership, and terminal reports;
-- evidence-labeled adapters for Codex, Claude Code, CodeBuddy, WorkBuddy, and
-  generic prompt-only environments;
-- a fictional, data-free example; and
-- local validation for the Skill and schemas.
-
-V1 deliberately provides no daemon, cloud account, telemetry, transcript
-storage, secret handling, automatic merge, automatic deployment, or trusted-by-
-default third-party hook.
+Coordlane ships no server, daemon, telemetry, transcript store, secret handler,
+automatic merge, deployment, migration, release, runtime switch, or enabled
+third-party hook.
 
 ## Quick start
-
-1. Clone or download the repository when you want the complete protocol,
-   schemas, adapters, and templates. For a compact standalone install, copy
-   `skills/coordlane/` into a Skill directory supported by your host.
-2. Start with [`templates/captain-prompt.md`](templates/captain-prompt.md) in
-   the coordinating session.
-3. Define workstreams with
-   [`templates/project-map.md`](templates/project-map.md).
-4. Give each Crew session a completed copy of
-   [`templates/crew-prompt.md`](templates/crew-prompt.md).
-5. Require terminal reports in the format from
-   [`templates/report.md`](templates/report.md).
-6. Use the relevant adapter only when its capability and verification notes
-   match the current host.
-
-Run local checks:
 
 ```sh
 npm install
@@ -80,62 +66,49 @@ npm test
 python3 /path/to/skill-creator/scripts/quick_validate.py skills/coordlane
 ```
 
-The last command intentionally points to the host's official Skill validator;
-its location varies by installation.
+Copy `skills/coordlane/` into a supported Codex Skill location, or use it from
+this repository. Start the coordinating task with
+[`templates/captain-prompt.md`](templates/captain-prompt.md), fill
+[`templates/project-map.md`](templates/project-map.md), and dispatch each formal
+Crew with a completed [`templates/crew-prompt.md`](templates/crew-prompt.md).
 
-## Capability levels
+Use the filesystem model locally:
 
-| Level | Meaning |
-| --- | --- |
-| Native | The host exposes verified primitives for the operation. |
-| Hook-assisted | A reviewed, opt-in lifecycle hook can implement it. |
-| Polling | The Captain reads durable state at mandatory turn gates or other bounded checkpoints. |
-| Manual | People copy prompts or reports between sessions. |
+```sh
+node reference/coordlane.mjs init work/demo-state fictional-library
+node reference/coordlane.mjs status work/demo-state
+node reference/coordlane.mjs sweep work/demo-state
+```
 
-See the dated [capability matrix](docs/research/capability-matrix.md). An
-adapter must state its evidence, limitations, and fallback. Unknown is never
-promoted to Native.
+## Codex reliability rules
 
-## Safety rules
+Current Codex desktop task tools provide stable IDs, listing, reading,
+delivery, bounded waiting, cursors, and archival. They do not establish a
+completion observer that can reliably send a message after final output.
+Coordlane therefore uses Level 2 orchestration:
 
-- Captain alone authorizes integration, migration, deployment, release, and
-  runtime switches.
-- A Crew owns only its assigned paths and resources.
-- Shared entry points have a single writer; Crew sessions submit change lists
-  for Captain integration.
-- `completed` means the assigned workstream is complete, not the Mission.
-- Completion does not release files. Release requires a commit disposition,
-  workspace check, validation evidence, a no-more-edits promise, overlap
-  review, and external-side-effect disclosure.
-- Every Captain turn has two completeness gates: a non-blocking incremental
-  scan of registered, non-archived Crew at turn entry and again before the
-  final response. Crew notifications never replace these scans.
-- Radio is optional. It never retries or creates a background watcher in V1.
+1. dispatch with an `assignment_id`;
+2. verify target acknowledgement by reading the task;
+3. maintain one cursor per registered, non-archived Crew;
+4. run non-blocking full sweeps at turn entry and pre-final;
+5. treat multi-target wait as first-change latency optimization only;
+6. consume only durable, matching report revisions; and
+7. treat pure numeric wake as an optional hint, never truth or completeness.
 
-## Prior art and independent scope
+## Project status and boundaries
 
-Multi-agent orchestration is an established field. Several existing projects
-overlap with parts of this idea, including `firstmate`, AWS Labs CLI Agent
-Orchestrator, Nelson, Orca, and general team-orchestration Skills. We reviewed
-their public positioning to avoid claiming novelty and to define a narrower
-scope. No source code or prose from those projects is included here.
+The protocol, reference store, schemas, and simulated failure tests are
+runnable locally. Live cross-task Codex creation/dispatch tests require an
+explicit user request to create test tasks and are not implied by repository
+tests. See the [self-audit](docs/self-audit.md) for the exact evidence boundary.
 
-See the [prior-art review](docs/research/prior-art.md) for similarities,
-differences, links, and the pre-publication naming gate. This is an engineering
-comparison, not legal advice or a trademark clearance.
+No GitHub Release or external PR is created by this phase. Migration from early
+Agent Captain drafts is documented in
+[`docs/migration-from-agent-captain.md`](docs/migration-from-agent-captain.md).
 
-## Project status
-
-Phase 1 is a reviewable public draft at
-[`Mr-shanqiu/Coordlane`](https://github.com/Mr-shanqiu/Coordlane). A tagged
-release remains gated on:
-
-1. user review of the protocol and adapters;
-2. a fresh availability and trademark review for `Coordlane`;
-3. a fresh official-document and prior-art check; and
-4. validation of installation and triggering in each claimed host.
-
-The proposed follow-up work is in the [Phase 2 plan](docs/phase-2-plan.md).
+Prior art was reviewed for independent positioning; see
+[`docs/research/prior-art.md`](docs/research/prior-art.md). This is not legal or
+trademark advice.
 
 ## License
 

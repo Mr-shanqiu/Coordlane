@@ -1,88 +1,59 @@
-# Reports, handoff, and Radio
+# Reports, handoff, and quiet discovery
 
-## Terminal report
+## Durable terminal report
 
-Each terminal Crew response uses this shape:
+A terminal report is identified by `worker_id`, `assignment_id`, `attempt_id`,
+`ownership_epoch`, `report_revision`, and `report_digest`. Its content follows
+[`report.schema.json`](../schemas/report.schema.json). `completed`, `blocked`,
+`decision_needed`, and `failed` describe only the assigned scope.
 
-```text
-[REPORT][{crew_id}][completed|blocked|decision_needed]
+The producer order is report building, atomic durable write, digest, event, and
+optional transport hint. A running commentary cannot emit a terminal event.
+The strongest transport is a platform completion observer or reviewed post-turn
+hook. Without one, numeric Radio is only an opportunistic hint.
 
-Task:
-Workspace / branch / HEAD:
-Completed work:
-Commit (or none):
-Validation and results:
-Modified / occupied paths:
-Shared files or overlap:
-Runtime switches and external side effects:
-Captain decision required:
-Suggested next step:
-```
+## Full-sweep completeness gate
 
-Use [`templates/report.md`](../templates/report.md) for the bilingual human
-form and [`schemas/report.schema.json`](../schemas/report.schema.json) for
-machine-readable records.
+The Captain runs a non-blocking full sweep at **Turn-entry** and **Pre-final**,
+plus after core work, at long-task checkpoints, and for user status requests.
+Each sweep:
 
-## Handoff
+1. selects only registered, non-archived workers by stable ID;
+2. recovers durable reports that have no event;
+3. fixes an event high-water mark;
+4. reads each worker after its independent cursor until no revision through the
+   high-water mark remains;
+5. verifies `assignment_id`, attempt, ownership epoch, `report_revision`, and
+   digest before applying;
+6. records the idempotency key and advances the cursor only after success; and
+7. acknowledges delivery only after the report is consumed.
 
-A handoff transfers artifacts or responsibility; it does not automatically
-release ownership. Include the artifact location, commit disposition,
-verification, known limitations, shared-entry-point actions, and the intended
-next owner. The Captain completes the transfer only after the release rule in
-[`ownership.md`](ownership.md) passes.
+Use `timeoutMs=0` or an equivalent snapshot for thread-backed adapters.
+Multi-target wait returns a first change and cannot replace this drain. No
+change is completely silent. A degraded or failed scan is recorded and blocks
+Dock or Launch when freshness matters.
 
-## Conditional Radio
+If Pre-final changes a user-relevant conclusion, update the answer once and
+finish; do not recurse indefinitely. The raw report remains in the worker
+channel or report store. The user receives only outcome, risk, independent
+validation status, integration status, next step, and decisions.
 
-Radio is an optional terminal notification, not the coordination core.
+## Notification queue and Radio
 
-At `completed`, `blocked`, or `decision_needed`, a Crew may:
+Events contain routing metadata, never report prose. P0 safety/data-loss events
+may surface at the next tool boundary; P1 terminal events wait for a safe
+point; P2 progress is query-only. Pending events remain durable while the
+Captain is active and do not repeatedly disturb the user.
 
-1. keep the full report in its own context;
-2. query Captain status once immediately before its final response;
-3. send exactly one message containing only its Crew ID when the Captain is
-   explicitly and freshly reported as idle; and
-4. send nothing when status is active, unavailable, unknown, stale, failed, or
-   not loaded.
+A message containing only a numeric Crew identifier may trigger an immediate
+global full sweep. It is not the discovery mechanism. Never require an
+impossible “send after final from the same turn.” Never retry, loop, poll, or
+schedule numeric notifications in the core protocol.
 
-The Crew must not attach a summary, retry, loop, poll, schedule a timer, or
-create a background automation. Each terminal transition permits at most one
-Radio message.
+## Handoff and release
 
-## Captain dual turn gate
-
-Radio delivery is best-effort and is never the completeness mechanism. The
-Captain must run both of these coordination scans on every user-facing turn:
-
-1. **Turn-entry scan**: after receiving the user's message and before handling
-   it, scan every registered, non-archived formal execution session.
-2. **Pre-final scan**: after preparing the answer and before emitting the final
-   response, scan the same registry again.
-
-Each scan must:
-
-- use `timeoutMs=0` or an equivalent non-blocking snapshot;
-- pass the last stored cursor, revision, or change token for each session and
-  read only sessions whose state changed;
-- remain completely silent when nothing changed;
-- absorb changed reports in the background, update the Chart, ownership,
-  gates, decisions, and Runtime State, and perform only integration or
-  dispatch actions already within the Captain's authority; and
-- expose only relevant conclusions, risks, and decisions to the user, never a
-  raw Crew report in the Captain conversation.
-
-If the pre-final snapshot changes a user-relevant conclusion, revise the draft
-once after absorbing it and then respond. Do not turn the gate into a recursive
-scan loop.
-
-The Captain must maintain a registry containing the stable session handle,
-formal/archived state, and latest cursor or revision. Ad hoc chats, unregistered
-helpers, and archived sessions are outside the scan set.
-
-Any message whose entire content is a numeric identifier may trigger an
-immediate global scan of all registered, non-archived execution sessions. That
-fast path does not replace either turn gate. The Captain may also scan at other
-natural checkpoints, but must not create a daemon or repeated polling loop.
-
-If a host cannot verify idle state or deliver a single message without
-interrupting work, the adapter must disable Radio and fall back to bounded
-polling or manual handoff.
+Handoff transfers evidence or responsibility; completion does not release
+files. Release requires commit disposition, checked workspace state, recorded
+validation, a no-more-edits promise, overlap clearance, runtime and external
+side-effect disclosure, and Captain confirmation. A new writer receives a new
+ownership epoch so stale workers cannot resume writes.

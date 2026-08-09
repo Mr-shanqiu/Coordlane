@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/Mr-shanqiu/Coordlane/main/schemas/assignment.schema.json",
+  "title": "Coordlane assignment",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "project_id", "assignment_id", "parent_decision_id",
+    "worker_id", "origin", "scope_version", "ownership_epoch", "attempt_id",
+    "attempt_number", "objective", "acceptance_criteria", "owned_resources",
+    "forbidden_resources", "shared_entrypoints", "dependencies", "branch_policy",
+    "execution_mode", "budgets", "external_side_effects", "status", "delivery",
+    "acknowledgement", "worker_report_revision", "coordinator_disposition",
+    "coordinator_checks", "integration", "created_at", "updated_at"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "project_id": { "$ref": "#/$defs/id" },
+    "assignment_id": { "$ref": "#/$defs/id" },
+    "parent_decision_id": { "$ref": "#/$defs/id" },
+    "worker_id": { "$ref": "#/$defs/id" },
+    "origin": { "enum": ["coordinator", "user_direct", "external"] },
+    "scope_version": { "type": "integer", "minimum": 1 },
+    "ownership_epoch": { "type": "integer", "minimum": 1 },
+    "attempt_id": { "$ref": "#/$defs/id" },
+    "attempt_number": { "type": "integer", "minimum": 1 },
+    "objective": { "$ref": "#/$defs/nonEmpty" },
+    "acceptance_criteria": { "$ref": "#/$defs/nonEmptyStrings" },
+    "owned_resources": { "$ref": "#/$defs/strings" },
+    "forbidden_resources": { "$ref": "#/$defs/strings" },
+    "shared_entrypoints": { "$ref": "#/$defs/strings" },
+    "dependencies": { "$ref": "#/$defs/strings" },
+    "branch_policy": { "enum": ["ephemeral-cherry-pick", "persistent-merge"] },
+    "execution_mode": { "enum": ["write", "read_only", "skeleton"] },
+    "budgets": { "$ref": "#/$defs/budgets" },
+    "external_side_effects": { "$ref": "#/$defs/strings" },
+    "status": { "enum": ["draft", "dispatched", "delivered", "acknowledged", "running", "completed", "blocked", "decision_needed", "failed", "superseded", "validated", "integrated", "revision_requested", "rejected", "closed"] },
+    "delivery": { "oneOf": [{ "$ref": "#/$defs/delivery" }, { "type": "null" }] },
+    "acknowledgement": { "oneOf": [{ "$ref": "#/$defs/acknowledgement" }, { "type": "null" }] },
+    "worker_report_revision": { "type": "integer", "minimum": 0 },
+    "coordinator_disposition": { "enum": ["pending_review", "accepted", "revision_requested", "rejected"] },
+    "coordinator_checks": { "type": "array", "items": { "$ref": "#/$defs/check" } },
+    "integration": { "oneOf": [{ "$ref": "#/$defs/integration" }, { "type": "null" }] },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "enum": ["draft", "dispatched"] } }, "required": ["status"] },
+      "then": { "properties": { "acknowledgement": { "type": "null" }, "integration": { "type": "null" } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "delivered" } }, "required": ["status"] },
+      "then": { "properties": { "delivery": { "$ref": "#/$defs/delivery" }, "acknowledgement": { "type": "null" } } }
+    },
+    {
+      "if": { "properties": { "status": { "enum": ["acknowledged", "running", "completed", "blocked", "decision_needed", "validated", "integrated"] } }, "required": ["status"] },
+      "then": { "properties": { "delivery": { "$ref": "#/$defs/delivery" }, "acknowledgement": { "$ref": "#/$defs/acknowledgement" } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "integrated" } }, "required": ["status"] },
+      "then": { "properties": { "integration": { "$ref": "#/$defs/integration" } } }
+    }
+  ],
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+    "nonEmpty": { "type": "string", "minLength": 1 },
+    "strings": { "type": "array", "items": { "$ref": "#/$defs/nonEmpty" }, "uniqueItems": true },
+    "nonEmptyStrings": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/nonEmpty" }, "uniqueItems": true },
+    "budgets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["token_limit", "cpu", "network", "external_calls"],
+      "properties": {
+        "token_limit": { "type": ["integer", "null"], "minimum": 1 },
+        "cpu": { "enum": ["low", "bounded", "unrestricted"] },
+        "network": { "enum": ["none", "read_only", "approved_writes"] },
+        "external_calls": { "$ref": "#/$defs/strings" }
+      }
+    },
+    "delivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["delivery_id", "delivered_at"],
+      "properties": {
+        "delivery_id": { "$ref": "#/$defs/nonEmpty" },
+        "delivered_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "acknowledgement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["latest_user_message_contains_assignment", "assistant_repeated_scope", "active_turn_matches", "acknowledged_at"],
+      "properties": {
+        "latest_user_message_contains_assignment": { "const": true },
+        "assistant_repeated_scope": { "const": true },
+        "active_turn_matches": { "const": true },
+        "acknowledged_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["check", "result", "evidence", "subject_head"],
+      "properties": {
+        "check": { "$ref": "#/$defs/nonEmpty" },
+        "command": { "$ref": "#/$defs/nonEmpty" },
+        "result": { "enum": ["passed", "failed", "not_run"] },
+        "exit_code": { "type": ["integer", "null"] },
+        "evidence": { "$ref": "#/$defs/nonEmpty" },
+        "subject_head": { "$ref": "#/$defs/nonEmpty" }
+      }
+    },
+    "integration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["strategy", "source_commit", "integrated_commit", "integrated_at"],
+      "properties": {
+        "strategy": { "enum": ["cherry-pick", "merge"] },
+        "source_commit": { "$ref": "#/$defs/nonEmpty" },
+        "integrated_commit": { "$ref": "#/$defs/nonEmpty" },
+        "integrated_at": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

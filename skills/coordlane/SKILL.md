@@ -1,113 +1,103 @@
 ---
 name: coordlane
-description: Coordinate complex work across multiple AI sessions with one Captain, bounded Crew workstreams, exclusive ownership, dependency gates, structured terminal reports, safe handoffs, and explicit control of integration and external side effects. Use when two or more AI sessions or agents will work on the same mission, especially when work may run in parallel, touch a shared repository, depend on ordered results, require user decisions, or culminate in merge, migration, deployment, or release.
+description: Coordinate complex work across multiple AI sessions with one Captain, stable worker registration, identity-bound assignments and acknowledgements, exclusive ownership, dependency gates, durable reports, quiet full-sweep discovery, independent validation, and traceable integration. Use when two or more AI sessions or logical agents share a mission, repository, dependency chain, user decision, or release boundary.
 ---
 
 # Coordlane
 
-Coordinate the Mission through explicit contracts and evidence. Keep the core
-platform-independent; load the matching adapter only after verifying that the
-current host exposes the claimed capabilities.
+Act as the Captain unless the user explicitly assigns a Crew role. Keep
+coordination truth in explicit state, not in session titles or chat memory.
 
-## Run the coordination loop
+## Run the Captain loop
 
-1. **Audit first.** Confirm workspace, repository, branch, HEAD, dirty state,
-   authoritative instructions, active ownership, dependencies, and external-
-   side-effect boundaries before assigning writes.
-2. **Define the Mission.** Record the outcome, acceptance criteria, constraints,
-   user authority, and actions that require a new decision.
-3. **Build the Chart.** Split the Mission into bounded Workstreams. Give each
-   one a stable Crew ID, objective, owned and forbidden paths, shared entry
-   points, baseline, dependencies, gates, stop conditions, and report contract.
-4. **Check parallel safety.** Run Workstreams concurrently only when mutable
-   paths and resources are disjoint and upstream gates have passed. Prefer an
-   isolated branch or worktree for substantial code changes.
-5. **Dispatch Crew.** Give each Crew the completed crew prompt from
-   `../../templates/crew-prompt.md`. Require a read-only inventory before edits.
-6. **Monitor with the dual turn gate.** On every user-facing turn, run a
-   non-blocking scan after the user message and before work, then another after
-   preparing the answer and before the final response. Scan only registered,
-   non-archived formal execution sessions; use stored cursors or revisions to
-   read only changes and stay silent when none exist.
-7. **Review terminal reports.** Accept `completed`, `blocked`, or
-   `decision_needed` only when the status matches evidence. Treat Crew
-   completion as local to its authorized Workstream.
-8. **Release ownership explicitly.** Require commit disposition, clean-state
-   check, validation evidence, no-more-edits commitment, overlap review,
-   runtime disclosure, and shared-entry-point handoff.
-9. **Dock deliberately.** Re-run integration-level verification before merge or
-   reassignment. Keep shared entry points under one writer.
-10. **Launch only with authority.** Captain alone coordinates runtime switches,
-    migrations, deployments, releases, and other external side effects.
+1. **Turn-entry full sweep.** Before handling each user message, take a
+   non-blocking snapshot of every registered, non-archived formal Crew. Use
+   `timeoutMs=0` or the host equivalent, each worker's cursor/revision, and read
+   only changes. Drain every worker through a fixed high-water mark; a
+   multi-target wait returns only the first change and is not a full sweep.
+2. **Audit.** Confirm repository, workspace, branch, HEAD, dirty state,
+   instructions, authoritative truth, active ownership, dependencies, runtime
+   switches, external side effects, and token/CPU/network/call budgets.
+3. **Plan the Chart.** Define Mission acceptance, Workstreams, dependencies,
+   gates, shared entry points, stop conditions, and single-writer ownership.
+4. **Register stable identity.** Store `role_id`, `worker_id`, `thread_id`,
+   `host_id`, workspace, branch policy, capabilities, archived state, and
+   cursor. Never route by title.
+5. **Create the assignment.** Record `assignment_id`, `parent_decision_id`,
+   `scope_version`, `attempt_id`, `origin`, ownership epoch, acceptance,
+   forbidden resources, budgets, and one branch policy.
+6. **Preflight before dispatch.** Block writes on dirty or wrong workspace,
+   overlap, unmet dependency, unsafe runtime, insufficient budget, or unsettled
+   truth. Unsettled truth permits only read-only audit or skeleton work.
+7. **Close the dispatch transaction.** Treat message send as delivery only.
+   Read the target and require acknowledgement: its latest user message
+   contains the exact assignment ID, its assistant restates the bounded scope
+   or starts the assigned action, and the active turn belongs to this
+   assignment. Do not overwrite `user_direct` or `external` work.
+8. **Consume reports quietly.** Require atomic durable report before event.
+   Verify identity, attempt, ownership epoch, report revision, and digest;
+   consume idempotently, advance cursor only after success, and acknowledge the
+   event only after report consumption. Recover durable reports with lost
+   events. Keep raw reports outside the user conversation.
+9. **Validate independently.** Inspect scope and diff, reproduce proportional
+   checks against the reported HEAD, review overlap, secrets, runtime state,
+   and side effects, then accept, request revision, or reject. Worker-reported
+   passing tests are not Captain-verified tests.
+10. **Dock and release.** Integrate only after validation. Use either
+    `ephemeral-cherry-pick` or `persistent-merge`; record source and integrated
+    commits. Never auto-reset, rebase, force, merge, deploy, migrate, publish,
+    or switch runtime state. Release ownership only with complete evidence.
+11. **Pre-final full sweep.** After completing the core answer and before the
+    final response, repeat the non-blocking full sweep. If relevant state
+    changed, update the answer once. Do not recurse into a scan loop.
 
-## Enforce invariants
+Also sweep after core work, at durable checkpoints during long tasks, and when
+the user asks for status. Stay silent on unchanged snapshots. Surface only
+completed outcome, risk, Captain validation, integration, next step, and needed
+decisions.
 
-- Never allow two writers to own the same path or mutable resource.
-- Never let Crew expand scope or edit an unowned shared entry point.
-- Never equate a flat task list with Mission state; maintain dependencies,
-  ownership, gates, decisions, and Runtime State.
-- Never equate `completed` with released, integrated, deployed, or Mission done.
-- Never paste raw Crew reports into the user's main conversation unless asked;
-  summarize conclusions, risks, and decisions.
-- Never assume a host has Codex-like thread APIs. Unknown capability degrades to
-  Polling or Manual.
-- Never enable third-party hooks by default.
+## Enforce state boundaries
 
-## Enforce the dual turn gate
+- Assignment: `draft -> dispatched -> delivered -> acknowledged -> running ->
+  terminal -> validated -> integrated or revision/rejection -> closed`.
+- Report: `building -> durable -> notified/discovered -> consumed -> validated
+  -> archived`.
+- Notification: `pending -> delivered -> acknowledged`.
+- Never mark integrated without Captain validation.
+- Never treat `completed` as Mission complete, released, integrated, deployed,
+  or published.
+- Never acknowledge delivery as report consumption.
 
-Treat Crew notification as a fast path, never a completeness guarantee. For
-both the turn-entry and pre-final scan, use `timeoutMs=0` or an equivalent
-non-blocking snapshot. Absorb changed reports privately, update coordination
-state, and show the user only relevant conclusions, risks, and decisions.
+## Apply quiet notification rules
 
-Any message containing only a numeric identifier triggers an immediate global
-scan, but does not replace either mandatory turn scan. If pre-final changes
-affect the draft, revise it once; never recurse into a scan loop. Do not scan
-unregistered helpers or archived sessions. Do not paste raw reports into the
-Captain conversation or create a background polling loop.
+Prefer a platform completion observer or reviewed post-turn hook. Otherwise
+write the complete durable report first, then emit an event containing only
+worker, assignment, type, priority, revision, and digest. Pending P1 terminal
+events remain durable while Captain is active; P0 safety events surface at the
+next tool boundary; P2 progress is query-only.
 
-## Use terminal reports
+A pure numeric identifier can trigger an immediate global full sweep, but is an
+opportunistic transport hint. Never require the same agent to call a tool after
+its final answer. Never retry, loop, poll, or schedule numeric wake messages.
 
-Require this exact header:
+## Load companion resources
 
-```text
-[REPORT][{crew_id}][completed|blocked|decision_needed]
-```
+When installed with the repository, read only what the task needs:
 
-Then require task, workspace/branch/HEAD, completed work, commit disposition,
-validation, modified or occupied paths, overlap, Runtime State, required
-decision, and next step. Use `../../templates/report.md` for the full form.
+- `../../core/state-machines.md`, `events.md`, `ownership.md`,
+  `dependencies.md`, `branch-policy.md`, `handoff.md`, and `release-gates.md`;
+- `../../schemas/` for machine-readable state;
+- `../../adapters/interface.md` and only the current platform adapter;
+- `../../templates/` for prompts, reports, and maps; and
+- `../../docs/research/capability-matrix.md` before platform claims.
 
-## Apply Radio conservatively
+Unknown host capability downgrades to filesystem polling or manual operation.
+Do not enable third-party hooks by default or claim an untested adapter as
+working.
 
-Radio is optional. At a terminal state, query Captain status once. Send one
-message containing only the Crew ID only if the status is explicitly and
-freshly idle. Send nothing for active, unknown, stale, unavailable, failed, or
-not-loaded state. Never attach a summary, retry, loop, poll, schedule a timer,
-or create an automation. The Captain's dual turn gate remains mandatory because
-Radio is best-effort.
+## Stop
 
-Disable Radio when the adapter cannot verify idle state without interruption.
-
-## Read project resources as needed
-
-When this Skill is used from the full repository and the companion paths exist:
-
-- Read `../../core/` before defining or changing protocol semantics.
-- Read `../../schemas/` when producing machine-readable project state.
-- Read only the relevant directory under `../../adapters/` after identifying
-  the host.
-- Use `../../templates/` to create Captain prompts, Crew prompts, reports, and
-  project maps.
-- Read `../../docs/research/capability-matrix.md` before making a platform
-  capability claim.
-
-When installed as a standalone Skill, use the invariants and report contract in
-this file and ask the user for any project-specific map or adapter. Do not
-invent missing companion content.
-
-## Stop conditions
-
-Stop and report when workspace identity is wrong, ownership overlaps, the
-baseline changed unexpectedly, a required gate fails, user authority is
-insufficient, or continuing would cause an unapproved external side effect.
+Stop and report a curated risk when identity is ambiguous, stable binding is
+missing, ownership overlaps, the baseline or truth changes, acknowledgement
+fails, a digest mismatches, validation fails, authority is insufficient, or an
+unapproved side effect would occur.

@@ -1,0 +1,30 @@
+{
+  "adapter": "codex-desktop",
+  "adapter_version": "1.0.0",
+  "active_target": true,
+  "last_verified": "2026-08-09",
+  "capability_level": 2,
+  "completion_observer": "unverified",
+  "operations": {
+    "create_worker": {"tool": "create_thread", "status": "available_with_user_authorization"},
+    "dispatch_assignment": {"tool": "send_message_to_thread", "status": "available_delivery_only"},
+    "read_worker": {"tool": "read_thread", "status": "available"},
+    "wait_worker": {"tool": "wait_threads", "status": "available_first_change_only"},
+    "persist_report": {"tool": "task_final_or_filesystem_store", "status": "available_with_adapter_rule"},
+    "emit_event": {"tool": "send_message_to_thread", "status": "opportunistic_only"},
+    "scan_events": {"tool": "wait_threads", "status": "available_per_target_with_cursor"},
+    "ack_event": {"tool": "coordlane_ledger", "status": "reference_implementation"},
+    "archive_worker": {"tool": "set_thread_archived", "status": "available"},
+    "workspace_status": {"tool": "git_read_only", "status": "available"},
+    "integrate_change": {"tool": "captain_controlled_git", "status": "manual_authority_gate"}
+  },
+  "invariants": {
+    "stable_identity": ["thread_id", "host_id"],
+    "title_is_routing_key": false,
+    "send_equals_ack": false,
+    "multi_target_wait_is_full_sweep": false,
+    "raw_report_in_user_chat": false,
+    "numeric_wake_is_truth": false
+  },
+  "fallback": ["level_3_filesystem_mailbox", "level_4_manual"]
+}
