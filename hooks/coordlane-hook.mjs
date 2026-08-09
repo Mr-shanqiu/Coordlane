@@ -75,9 +75,9 @@ const handleWaitThreads = (root, input) => {
     timeout_ms: timeout,
     observed_workers: observed
   });
-  if (result.budget_exhausted) {
+  if (result.scan_limit_reached) {
     stopOutput({
-      systemMessage: "Coordlane snapshot budget exhausted; freshness is unknown. Stop scanning and report the degraded gate."
+      systemMessage: "Coordlane snapshot-call limit reached; freshness is unknown. Stop scanning and report the degraded gate."
     });
   } else if (result.registry_changed) {
     stopOutput({

@@ -47,7 +47,7 @@ const makeState = (suffix) => {
     owned_resources: ["src/hook-check.js"],
     forbidden_resources: ["src/shared.js"],
     branch_policy: "ephemeral-cherry-pick",
-    budgets: { token_limit: 1000, cpu: "low", network: "none", external_calls: [] }
+    external_side_effects: []
   });
   dispatchAssignment(root, `assignment-${suffix}`, {
     preflight: {
@@ -55,7 +55,6 @@ const makeState = (suffix) => {
       branch_policy_valid: true,
       dependencies_ready: true,
       runtime_safe: true,
-      budget_available: true,
       ownership_clear: true,
       truth_source_final: true
     }

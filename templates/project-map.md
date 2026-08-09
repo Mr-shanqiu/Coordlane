@@ -24,10 +24,10 @@ Titles are display-only and must not be used for routing.
 | Canonical resource | Owner | Assignment | Epoch | Mode | State | Shared-entry handoff |
 | --- | --- | --- | --- | --- | --- | --- |
 
-## Runtime and budgets
+## Runtime authority
 
-| Assignment | Token | CPU | Network | External calls | Runtime switches | Cleanup |
-| --- | --- | --- | --- | --- | --- | --- |
+| Assignment | Allowed external side effects | Runtime switches | Running processes | Cleanup |
+| --- | --- | --- | --- | --- |
 
 ## Event consumption
 

@@ -20,16 +20,16 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["turn_id", "registry_revision", "required_workers", "entry_sweep", "pre_final_sweep", "snapshot_tool_calls", "max_snapshot_tool_calls", "budget_exhausted", "registry_changed", "started_at"],
+          "required": ["turn_id", "registry_revision", "required_workers", "entry_sweep", "pre_final_sweep", "snapshot_calls_used", "snapshot_call_limit", "scan_limit_reached", "registry_changed", "started_at"],
           "properties": {
             "turn_id": { "$ref": "#/$defs/nonEmpty" },
             "registry_revision": { "type": "integer", "minimum": 0 },
             "required_workers": { "$ref": "#/$defs/workerAddresses" },
             "entry_sweep": { "$ref": "#/$defs/sweepPhase" },
             "pre_final_sweep": { "$ref": "#/$defs/sweepPhase" },
-            "snapshot_tool_calls": { "type": "integer", "minimum": 0 },
-            "max_snapshot_tool_calls": { "type": "integer", "minimum": 2 },
-            "budget_exhausted": { "type": "boolean" },
+            "snapshot_calls_used": { "type": "integer", "minimum": 0 },
+            "snapshot_call_limit": { "type": "integer", "minimum": 2 },
+            "scan_limit_reached": { "type": "boolean" },
             "registry_changed": { "type": "boolean" },
             "started_at": { "type": "string", "format": "date-time" }
           }

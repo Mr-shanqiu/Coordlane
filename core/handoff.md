@@ -34,7 +34,7 @@ Use `timeoutMs=0` or an equivalent snapshot for thread-backed adapters. Try one
 batch, then query only targets not evidenced in that response. The Hook records
 actual target coverage against the current `turn_id`; a local mailbox sweep
 alone cannot pass the gate. No change is completely silent. A degraded,
-over-budget, or failed scan records unknown freshness and blocks Dock or Launch
+over-limit, or failed scan records unknown freshness and blocks Dock or Launch
 when freshness matters.
 
 If Pre-final changes a user-relevant conclusion, update the answer once and

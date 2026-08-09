@@ -74,6 +74,11 @@ calls. With active Crew, Coordlane tries one batched `timeoutMs=0` snapshot and
 only asks for missing targets individually; unchanged results stay silent and
 full reports are not reread.
 
+Coordlane does not require per-assignment token, CPU, network, or external-call
+quotas. Those are project-specific concerns. The core contract keeps only scope,
+ownership, dependencies, validation, and explicit runtime/external-side-effect
+authority; quota protection applies to Coordlane's own coordination overhead.
+
 ## Quick start
 
 ```sh

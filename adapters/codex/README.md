@@ -58,7 +58,7 @@ search by fuzzy title to route a message.
 ## Dispatch and ACK
 
 1. Preflight ownership, dependencies, workspace, branch policy, runtime, side
-   effects, and budgets.
+   effects, and authority.
 2. Send a prompt containing the exact assignment identity and Crew contract.
 3. Record `delivered`; do not infer `running` from task status `active`.
 4. Read the target's newest turn. Mark `acknowledged` only when the newest user
@@ -87,7 +87,7 @@ status requests:
 The `PostToolUse(wait_threads)` Hook records which stable task addresses were
 actually present in each snapshot result for the active `turn_id`. Both entry
 and pre-final coverage are required; draining only local mailbox files cannot
-pass the finalizer. A per-turn call budget prevents polling loops.
+pass the finalizer. A per-turn call limit prevents polling loops.
 
 At user-turn entry, invalidate `final_gate_passed`. Immediately before final,
 run the registry-wide sweep even for an unrelated question. A wrapper or host

@@ -25,9 +25,9 @@
       ],
       "completed_at": "2026-08-09T00:01:00.000Z"
     },
-    "snapshot_tool_calls": 2,
-    "max_snapshot_tool_calls": 4,
-    "budget_exhausted": false,
+    "snapshot_calls_used": 2,
+    "snapshot_call_limit": 4,
+    "scan_limit_reached": false,
     "registry_changed": false,
     "started_at": "2026-08-09T00:00:00.000Z"
   },

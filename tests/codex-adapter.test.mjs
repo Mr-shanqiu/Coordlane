@@ -37,7 +37,7 @@ assert.equal(manifest.invariants.raw_report_in_user_chat, false);
 assert.equal(manifest.invariants.numeric_wake_is_truth, false);
 assert.equal(manifest.invariants.scheduled_heartbeat_enabled, false);
 assert.equal(manifest.invariants.idle_registry_snapshot_calls, 0);
-assert.equal(manifest.invariants.snapshot_call_budget_enforced, true);
+assert.equal(manifest.invariants.snapshot_call_limit_enforced, true);
 assert.equal(manifest.invariants.shared_worktree_state, "git_common_directory");
 assert.equal(manifest.invariants.standalone_skill_install, false);
 

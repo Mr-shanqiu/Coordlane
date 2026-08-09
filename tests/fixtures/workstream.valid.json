@@ -21,12 +21,6 @@
   "gates": ["search-tests"],
   "branch_policy": "ephemeral-cherry-pick",
   "execution_mode": "write",
-  "budgets": {
-    "token_limit": 4000,
-    "cpu": "low",
-    "network": "none",
-    "external_calls": []
-  },
   "external_side_effects_allowed": false,
   "stop_conditions": ["Stop if an owned path is already dirty"],
   "status": "ready"

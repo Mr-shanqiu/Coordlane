@@ -74,7 +74,7 @@ The finalizer enforces this mechanically. `beginTurn` invalidates the previous
 pass and records the active registry revision; tool Hooks attest entry and
 pre-final live snapshots; `preFinalGate` drains durable events; and
 `assertFinalizable` rejects output if either live attestation or mailbox gate is
-missing, stale, unknown, over budget, or has unread terminal revisions. Topic
+missing, stale, unknown, over the scan limit, or has unread terminal revisions. Topic
 relevance never bypasses this guard.
 
 ## Two reliability domains
@@ -94,12 +94,12 @@ delivery receipt. Hooks remain inactive until the user reviews and trusts them.
 Coordlane treats worker reports as untrusted claims until the Captain checks
 scope, diff, subject HEAD, relevant tests, secret disclosure, runtime state,
 and external side effects. It stores no transcript or secret and performs no
-automatic merge, deployment, migration, or release. Per-assignment token, CPU,
-network, and external-call budgets are part of preflight.
+automatic merge, deployment, migration, or release. Runtime authority and
+external-side-effect permission remain explicit assignment boundaries.
 
 Task snapshot cost is bounded. No active assignment produces no snapshot calls.
 There is no scheduled polling, and the Hook refuses observations after the
-per-turn call budget instead of silently spending more quota.
+per-turn call limit instead of silently spending more quota.
 
 The runnable filesystem reference is documented in
 [`../reference/README.md`](../reference/README.md). Git projects keep state in

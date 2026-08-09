@@ -70,7 +70,6 @@ const assignmentInput = (workerId, assignmentId, overrides = {}) => ({
   owned_resources: [`src/${assignmentId}`],
   forbidden_resources: ["src/shared-entry.js"],
   branch_policy: "ephemeral-cherry-pick",
-  budgets: { token_limit: 1000, cpu: "low", network: "none", external_calls: [] },
   ...overrides
 });
 
@@ -79,7 +78,6 @@ const preflight = {
   branch_policy_valid: true,
   dependencies_ready: true,
   runtime_safe: true,
-  budget_available: true,
   ownership_clear: true,
   truth_source_final: true
 };
@@ -399,7 +397,7 @@ test("quota: an idle registry passes both gates without task snapshot calls", ()
   addWorker(root);
   const turn = beginTurn(root, { turn_id: "idle-turn" });
   assert.equal(turn.turn_gate.required_workers.length, 0);
-  assert.equal(turn.turn_gate.snapshot_tool_calls, 0);
+  assert.equal(turn.turn_gate.snapshot_calls_used, 0);
   assert.ok(turn.turn_gate.entry_sweep.completed_at);
   assert.ok(turn.turn_gate.pre_final_sweep.completed_at);
   const gate = preFinalGate(root);
@@ -407,20 +405,20 @@ test("quota: an idle registry passes both gates without task snapshot calls", ()
   assert.equal(assertFinalizable(root).allowed, true);
 });
 
-test("quota: repeated empty snapshots stop at the per-turn budget", () => {
+test("quota: repeated empty snapshots stop at the coordination scan limit", () => {
   const root = makeRoot();
   addWorker(root);
-  start(root, "20", "budgeted-scan");
-  const turn = beginTurn(root, { turn_id: "budget-turn" });
+  start(root, "20", "limited-scan");
+  const turn = beginTurn(root, { turn_id: "scan-limit-turn" });
   let result;
-  for (let index = 0; index <= turn.turn_gate.max_snapshot_tool_calls; index += 1) {
+  for (let index = 0; index <= turn.turn_gate.snapshot_call_limit; index += 1) {
     result = recordSweepObservation(root, {
-      turn_id: "budget-turn",
+      turn_id: "scan-limit-turn",
       timeout_ms: 0,
       observed_workers: []
     });
   }
-  assert.equal(result.budget_exhausted, true);
+  assert.equal(result.scan_limit_reached, true);
   const gate = preFinalGate(root);
   assert.equal(gate.final_gate_passed, false);
   assert.equal(gate.freshness, "unknown");

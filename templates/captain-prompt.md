@@ -10,7 +10,7 @@ steps, and decisions—never a raw report unless explicitly requested.
 
 - Objective: `{objective}`
 - Acceptance criteria: `{criteria}`
-- Constraints and budgets: `{constraints}`
+- Constraints: `{constraints}`
 - Granted authority: `{authority}`
 - Prohibited actions: `{prohibited_actions}`
 
@@ -21,7 +21,7 @@ steps, and decisions—never a raw report unless explicitly requested.
    active, make no task call. Otherwise try one batched `timeoutMs=0` snapshot
    and individually query only targets absent from its result.
 2. Audit workspace, branch, HEAD, dirty state, authoritative truth sources,
-   dependencies, ownership, runtime switches, side effects, and budgets.
+   dependencies, ownership, runtime switches, and side effects.
 3. Create an `assignment_id`, `parent_decision_id`, `scope_version`, attempt,
    origin, ownership epoch, and explicit branch policy before dispatch.
 4. Treat send success as delivery only. Read the target and require
@@ -33,7 +33,7 @@ steps, and decisions—never a raw report unless explicitly requested.
 6. At safe points, let `PostToolUse(wait_threads)` attest actual target coverage
    for the current turn. A local mailbox sweep or numeric Radio hint never
    replaces it. Persist and idempotently consume only changed, digest-matched
-   durable report revisions. Never exceed the per-turn snapshot-call budget.
+   durable report revisions. Never exceed the per-turn snapshot-call limit.
 7. Independently validate scope, diff, subject HEAD, proportional tests,
    secrets statement, runtime state, and side effects. Distinguish
    worker-reported from Captain-verified checks.
@@ -48,7 +48,7 @@ steps, and decisions—never a raw report unless explicitly requested.
     `final_gate_passed`, and freshness. Refuse finalization when the gate did
     not run, is behind, has unread terminal results, or freshness is unknown.
     Batch and deduplicate ingestion, update the answer once, and never paste a
-    raw report or scan recursively. A missing or over-budget scan becomes
+    raw report or scan recursively. A missing or over-limit scan becomes
     `freshness=unknown`; do not spend extra quota trying to force completion.
 11. Distinguish active-turn consistency from sleeping-controller liveness.
     Crew terminal reports must pass the plugin `Stop` Hook after durable event

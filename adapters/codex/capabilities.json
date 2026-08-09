@@ -30,7 +30,7 @@
     "numeric_wake_is_truth": false,
     "scheduled_heartbeat_enabled": false,
     "idle_registry_snapshot_calls": 0,
-    "snapshot_call_budget_enforced": true,
+    "snapshot_call_limit_enforced": true,
     "shared_worktree_state": "git_common_directory",
     "standalone_skill_install": false
   },

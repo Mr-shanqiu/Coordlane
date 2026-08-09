@@ -29,7 +29,7 @@ Every Workstream must define:
 - shared entry points that require Captain integration;
 - upstream and downstream dependencies;
 - gates and checkpoints;
-- branch policy, resource budgets, and external-side-effect permission;
+- branch policy and external-side-effect permission;
 - terminal status rules; and
 - required report format.
 

@@ -375,7 +375,6 @@ export const createAssignment = (root, input) => {
     dependencies: input.dependencies ?? [],
     branch_policy: input.branch_policy,
     execution_mode: input.execution_mode ?? "write",
-    budgets: input.budgets,
     external_side_effects: input.external_side_effects ?? [],
     status: "draft",
     delivery: null,
@@ -421,7 +420,6 @@ const assertPreflight = (assignment, preflight) => {
     "branch_policy_valid",
     "dependencies_ready",
     "runtime_safe",
-    "budget_available",
     "ownership_clear"
   ];
   for (const key of required) {
@@ -759,9 +757,9 @@ export const beginTurn = (root, input = {}) => withStoreLock(root, () => {
     required_workers: requiredWorkers,
     entry_sweep: completeEmptySweep(sweepPhase(), requiredWorkers),
     pre_final_sweep: completeEmptySweep(sweepPhase(), requiredWorkers),
-    snapshot_tool_calls: 0,
-    max_snapshot_tool_calls: Math.max(2, requiredWorkers.length * 2 + 2),
-    budget_exhausted: false,
+    snapshot_calls_used: 0,
+    snapshot_call_limit: Math.max(2, requiredWorkers.length * 2 + 2),
+    scan_limit_reached: false,
     registry_changed: false,
     started_at: now()
   };
@@ -777,18 +775,18 @@ export const recordSweepObservation = (root, input) => withStoreLock(root, () =>
   const gate = ledger.turn_gate;
   if (!gate || gate.turn_id !== input.turn_id) throw new Error("Sweep observation is not for the active turn");
   if (input.timeout_ms !== 0) throw new Error("Coordlane accepts only non-blocking task snapshots");
-  if (gate.snapshot_tool_calls >= gate.max_snapshot_tool_calls) {
-    gate.budget_exhausted = true;
+  if (gate.snapshot_calls_used >= gate.snapshot_call_limit) {
+    gate.scan_limit_reached = true;
     ledger.freshness = "unknown";
     ledger.final_gate_passed = false;
     atomicWriteJson(paths.ledger, ledger);
     return {
       turn_id: gate.turn_id,
       complete: false,
-      budget_exhausted: true,
+      scan_limit_reached: true,
       missing_workers: gate.required_workers,
-      snapshot_tool_calls: gate.snapshot_tool_calls,
-      max_snapshot_tool_calls: gate.max_snapshot_tool_calls
+      snapshot_calls_used: gate.snapshot_calls_used,
+      snapshot_call_limit: gate.snapshot_call_limit
     };
   }
   if (registryFor(root).registry_revision !== gate.registry_revision) {
@@ -801,12 +799,12 @@ export const recordSweepObservation = (root, input) => withStoreLock(root, () =>
       complete: false,
       registry_changed: true,
       missing_workers: gate.required_workers,
-      snapshot_tool_calls: gate.snapshot_tool_calls,
-      max_snapshot_tool_calls: gate.max_snapshot_tool_calls
+      snapshot_calls_used: gate.snapshot_calls_used,
+      snapshot_call_limit: gate.snapshot_call_limit
     };
   }
 
-  gate.snapshot_tool_calls += 1;
+  gate.snapshot_calls_used += 1;
   const phase = gate.entry_sweep.completed_at ? gate.pre_final_sweep : gate.entry_sweep;
   const required = new Map(gate.required_workers.map((worker) => [workerAddressKey(worker), worker]));
   for (const observed of input.observed_workers ?? []) {
@@ -824,8 +822,8 @@ export const recordSweepObservation = (root, input) => withStoreLock(root, () =>
     complete: Boolean(phase.completed_at),
     missing_workers: gate.required_workers.filter((worker) =>
       !phase.observed_workers.some((observed) => workerAddressKey(observed) === workerAddressKey(worker))),
-    snapshot_tool_calls: gate.snapshot_tool_calls,
-    max_snapshot_tool_calls: gate.max_snapshot_tool_calls
+    snapshot_calls_used: gate.snapshot_calls_used,
+    snapshot_call_limit: gate.snapshot_call_limit
   };
 });
 
@@ -1143,11 +1141,11 @@ const preFinalGateUnlocked = (root, options = {}) => {
     const turnGateComplete = Boolean(
       ledger.turn_gate?.entry_sweep?.completed_at &&
       ledger.turn_gate?.pre_final_sweep?.completed_at &&
-      ledger.turn_gate.budget_exhausted !== true &&
+      ledger.turn_gate.scan_limit_reached !== true &&
       ledger.turn_gate.registry_changed !== true &&
       ledger.turn_gate.registry_revision === registryFor(root).registry_revision
     );
-    if (ledger.turn_gate?.budget_exhausted || ledger.turn_gate?.registry_changed) {
+    if (ledger.turn_gate?.scan_limit_reached || ledger.turn_gate?.registry_changed) {
       ledger.freshness = "unknown";
     }
     ledger.final_gate_passed =
@@ -1185,7 +1183,7 @@ const assertFinalizableUnlocked = (root) => {
   const turnGateComplete = Boolean(
     ledger.turn_gate?.entry_sweep?.completed_at &&
     ledger.turn_gate?.pre_final_sweep?.completed_at &&
-    ledger.turn_gate.budget_exhausted !== true &&
+    ledger.turn_gate.scan_limit_reached !== true &&
     ledger.turn_gate.registry_changed !== true &&
     ledger.turn_gate.registry_revision === registryFor(root).registry_revision
   );

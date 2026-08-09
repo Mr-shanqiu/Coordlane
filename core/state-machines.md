@@ -24,7 +24,7 @@ Illegal transitions include:
 - `dispatched -> integrated`;
 - `delivered -> running` without identity-bound acknowledgement;
 - a commentary or in-progress turn producing a terminal event;
-- running when ownership, dependency, runtime, or budget preflight failed;
+- running when ownership, dependency, or runtime preflight failed;
 - terminal state without a durable report revision;
 - integration before Captain validation; and
 - release before commit disposition, workspace, verification, overlap,

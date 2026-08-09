@@ -23,7 +23,7 @@ alternate path; an explicitly configured missing store must fail closed.
    only targets absent from its result. Never reread unchanged full reports.
 2. **Audit.** Confirm repository, workspace, branch, HEAD, dirty state,
    instructions, authoritative truth, active ownership, dependencies, runtime
-   switches, external side effects, and token/CPU/network/call budgets.
+   switches and external side effects.
 3. **Plan the Chart.** Define Mission acceptance, Workstreams, dependencies,
    gates, shared entry points, stop conditions, and single-writer ownership.
 4. **Register stable identity.** Store `role_id`, `worker_id`, `thread_id`,
@@ -31,10 +31,10 @@ alternate path; an explicitly configured missing store must fail closed.
    cursor. Never route by title.
 5. **Create the assignment.** Record `assignment_id`, `parent_decision_id`,
    `scope_version`, `attempt_id`, `origin`, ownership epoch, acceptance,
-   forbidden resources, budgets, and one branch policy.
+   forbidden resources and one branch policy.
 6. **Preflight before dispatch.** Block writes on dirty or wrong workspace,
-   overlap, unmet dependency, unsafe runtime, insufficient budget, or unsettled
-   truth. Unsettled truth permits only read-only audit or skeleton work.
+   overlap, unmet dependency, unsafe runtime, or unsettled truth. Unsettled
+   truth permits only read-only audit or skeleton work.
 7. **Close the dispatch transaction.** Treat message send as delivery only.
    Read the target and require acknowledgement: its latest user message
    contains the exact assignment ID, its assistant restates the bounded scope
@@ -63,8 +63,8 @@ alternate path; an explicitly configured missing store must fail closed.
 
 The bundled `PostToolUse(wait_threads)` Hook must attest both sweeps for the
 active `turn_id`. A local mailbox sweep cannot by itself set
-`final_gate_passed`. Respect the per-turn snapshot-call budget; if it is
-exhausted, mark freshness unknown instead of spending more quota.
+`final_gate_passed`. Respect the per-turn snapshot-call limit; if it is reached,
+mark freshness unknown instead of spending more quota.
 
 Begin every user turn by invalidating the prior final gate. Refuse finalization
 when monitored workers or unread terminal events exist and the current turn has

@@ -19,6 +19,9 @@ Last audited: 2026-08-10
   receipts, bounded degraded-delivery fallback, and Hook regression tests.
 - Shared Git-common-directory state for linked worktrees, mode-0700 directories,
   bounded cross-process mutation locking, and interrupted-write recovery.
+- Assignment and Workstream contracts contain no mandatory task token, CPU,
+  network, or external-call quotas. The only enforced call limit bounds
+  Coordlane's own live-snapshot overhead.
 - Prompt templates and safe-point coordination rules.
 
 ## Codex live acceptance

@@ -9,7 +9,7 @@
     "acceptance_criteria", "captain", "crew", "scope_version",
     "ownership_epoch", "workspace", "owned_paths", "forbidden_paths",
     "shared_entrypoints", "dependencies", "gates", "branch_policy",
-    "execution_mode", "budgets", "external_side_effects_allowed",
+    "execution_mode", "external_side_effects_allowed",
     "stop_conditions", "status"
   ],
   "properties": {
@@ -40,7 +40,6 @@
     "gates": { "$ref": "#/$defs/uniqueIds" },
     "branch_policy": { "enum": ["ephemeral-cherry-pick", "persistent-merge"] },
     "execution_mode": { "enum": ["write", "read_only", "skeleton"] },
-    "budgets": { "$ref": "#/$defs/budgets" },
     "external_side_effects_allowed": { "type": "boolean" },
     "allowed_side_effects": { "$ref": "#/$defs/uniqueStrings" },
     "stop_conditions": { "$ref": "#/$defs/nonEmptyUniqueStrings" },
@@ -60,17 +59,6 @@
     "nonEmpty": { "type": "string", "minLength": 1 },
     "uniqueStrings": { "type": "array", "items": { "$ref": "#/$defs/nonEmpty" }, "uniqueItems": true },
     "nonEmptyUniqueStrings": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/nonEmpty" }, "uniqueItems": true },
-    "uniqueIds": { "type": "array", "items": { "$ref": "#/$defs/id" }, "uniqueItems": true },
-    "budgets": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["token_limit", "cpu", "network", "external_calls"],
-      "properties": {
-        "token_limit": { "type": ["integer", "null"], "minimum": 1 },
-        "cpu": { "enum": ["low", "bounded", "unrestricted"] },
-        "network": { "enum": ["none", "read_only", "approved_writes"] },
-        "external_calls": { "$ref": "#/$defs/uniqueStrings" }
-      }
-    }
+    "uniqueIds": { "type": "array", "items": { "$ref": "#/$defs/id" }, "uniqueItems": true }
   }
 }

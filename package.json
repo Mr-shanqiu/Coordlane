@@ -1,6 +1,6 @@
 {
   "name": "coordlane",
-  "version": "0.2.0-dev",
+  "version": "0.2.1-dev",
   "private": true,
   "description": "Protocol-first coordination for auditable multi-agent project work",
   "license": "MIT",
