@@ -73,6 +73,8 @@ Turn-entry and Pre-final provide **active-turn consistency** only. After the
 Captain emits final, no prompt rule can provide liveness because no controller
 turn is running. If the Mission requires completion discovery within an SLA,
 configure a real host heartbeat or event broker before leaving workers active.
+Treat its interval as a target, not an SLA, unless the host provides and passes
+a maximum scheduler-delay guarantee.
 
 Arm the heartbeat only while a monitored Assignment is nonterminal or a
 terminal revision is unread. Each heartbeat performs only a bounded status and

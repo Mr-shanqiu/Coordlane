@@ -32,7 +32,12 @@ Last audited: 2026-08-09
   persistence before final remains unverified.
 - The current host does not establish a completion observer that runs after a
   worker final answer; safe-point full sweeps remain authoritative during a
-  turn, and an opt-in heartbeat is required for sleeping-period SLA.
+  turn. An opt-in heartbeat provides sleeping-period liveness; a strict SLA
+  requires a broker with a verified scheduler bound.
+- A live heartbeat discovered a silent post-final completion without user
+  input, but detection took 110.67 seconds and failed the nominal 60-second
+  target. Current Codex heartbeat is best-effort eventual liveness, not a
+  verified latency SLA.
 
 ## Deferred, not supported
 
@@ -50,3 +55,6 @@ simulations. The projectless live acceptance evidence is recorded in
 [`testing/codex-live-acceptance-2026-08-09.md`](testing/codex-live-acceptance-2026-08-09.md).
 Before a Codex release, repeat it with a corrected saved-project path and a
 disposable worktree, then add durable digest verification.
+
+Sleeping-period evidence is recorded in
+[`testing/codex-sleeping-controller-acceptance-2026-08-09.md`](testing/codex-sleeping-controller-acceptance-2026-08-09.md).

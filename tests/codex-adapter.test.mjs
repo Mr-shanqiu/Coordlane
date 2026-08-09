@@ -49,7 +49,7 @@ for (const term of [
   "final_gate_passed",
   "freshness=unknown",
   "Sleeping-controller heartbeat",
-  "must not claim real-time reporting"
+  "does not support a strict 60-second"
 ]) {
   assert.ok(codexReadme.includes(term), `Codex adapter is missing: ${term}`);
 }

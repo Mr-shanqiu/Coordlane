@@ -49,3 +49,8 @@ These gaps are why the adapter is Level 2 rather than Level 1.
 The projectless create/ACK/wait/cursor/send/archive path was live-tested on
 2026-08-09. Worktree and durable digest acceptance remain open; see the
 [acceptance record](../testing/codex-live-acceptance-2026-08-09.md).
+
+A temporary Codex heartbeat also discovered a silent post-final completion,
+but at 110.67 seconds after completion on a nominal one-minute recurrence. It
+therefore proves eventual liveness, not a 60-second SLA. See the
+[sleeping-controller record](../testing/codex-sleeping-controller-acceptance-2026-08-09.md).

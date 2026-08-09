@@ -109,10 +109,12 @@ per-task cursor snapshot and does no report read when unchanged. On terminal or
 decision change, it wakes the Captain to read, validate, and ingest. When all
 monitored tasks are terminal and consumed, disable the heartbeat.
 
-Do not confuse the heartbeat with a completion observer: it is bounded polling
-and its SLA is the configured interval plus scheduler latency. If no heartbeat
-is active, the adapter synchronizes sleeping-period results only on the next
-user or external wake and must not claim real-time reporting.
+Do not confuse the heartbeat with a completion observer: it is bounded polling.
+The live acceptance discovered completion after 110.67 seconds on a nominal
+one-minute recurrence, so the current host does not support a strict 60-second
+claim. If no heartbeat is active, the adapter synchronizes sleeping-period
+results only on the next user or external wake and must not claim real-time
+reporting.
 
 ## Safety and fallback
 
