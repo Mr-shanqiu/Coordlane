@@ -64,6 +64,20 @@ if (/\bTODO\b|\[TODO/i.test(skill)) {
   throw new Error("Skill contains unresolved TODO placeholders");
 }
 
+const dualGateRequirements = new Map([
+  ["skills/coordlane/SKILL.md", ["turn-entry", "pre-final", "timeoutMs=0", "cursor", "registered", "non-archived", "numeric identifier"]],
+  ["core/handoff.md", ["Turn-entry scan", "Pre-final scan", "timeoutMs=0", "revision", "completeness mechanism", "numeric identifier", "recursive"]],
+  ["templates/captain-prompt.md", ["turn-entry scan", "pre-final scan", "timeoutMs=0", "registered, non-archived", "numeric identifier"]]
+]);
+for (const [relativePath, requiredTerms] of dualGateRequirements) {
+  const content = fs.readFileSync(path.join(root, relativePath), "utf8");
+  for (const term of requiredTerms) {
+    if (!content.includes(term)) {
+      throw new Error(`${relativePath} is missing dual-turn-gate term: ${term}`);
+    }
+  }
+}
+
 const walk = (directory) =>
   fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const fullPath = path.join(directory, entry.name);
@@ -105,4 +119,4 @@ for (const file of walk(root)) {
   }
 }
 
-console.log(`Validated ${pairs.length} schemas, negative invariants, Skill metadata, formatting, local links, and sample-data safety.`);
+console.log(`Validated ${pairs.length} schemas, negative invariants, dual turn gates, Skill metadata, formatting, local links, and sample-data safety.`);

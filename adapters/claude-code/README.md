@@ -25,6 +25,13 @@ notifications, so the core's pure-ID Radio is usually unnecessary. Prefer the
 native lead summary and Captain checkpoint review over an extra notification
 layer.
 
+The lead must still execute the core dual turn gate. Use a non-blocking team
+task/status snapshot at turn entry and pre-final when the installed version
+exposes one. Persist and compare the smallest available task revision or state
+marker. If the surface cannot prove an incremental non-blocking read, label the
+gate Manual and perform an explicit changed-report check; hooks do not replace
+the two scans.
+
 ## Known limits affecting the protocol
 
 - Agent Teams are experimental and disabled by default.

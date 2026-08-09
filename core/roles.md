@@ -12,7 +12,9 @@ Maintain the authoritative Mission view. The Captain must:
 6. reconcile conflicts and request decisions when authority is insufficient;
 7. confirm release before reassigning files;
 8. integrate shared entry points; and
-9. exclusively authorize migrations, deployments, releases, and runtime
+9. run the mandatory turn-entry and pre-final non-blocking coordination scans
+   over registered, non-archived execution sessions; and
+10. exclusively authorize migrations, deployments, releases, and runtime
    switches.
 
 The Captain reports curated conclusions, risks, and decisions to the user. Raw

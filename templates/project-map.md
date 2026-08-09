@@ -25,6 +25,15 @@
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 00 |  |  |  |  |  |  | planned |
 
+## Formal execution session registry
+
+Only rows marked formal and not archived participate in the Captain's dual
+turn gate.
+
+| Crew ID | Stable session handle | Formal | Archived | Last cursor / revision | Last observed state |
+| --- | --- | --- | --- | --- | --- |
+| 00 |  | yes | no |  | planned |
+
 ## Ownership
 
 | Path or resource | Owner | Mode | State | Release evidence |

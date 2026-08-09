@@ -11,9 +11,13 @@
 3. Start separate Crew sessions and paste a completed Crew prompt into each.
 4. Isolate writable code work with branches or worktrees when supported by the
    project toolchain.
-5. Keep each full report in its Crew session. Copy the report to the Captain at
-   a natural checkpoint.
-6. Let the Captain update ownership, dependencies, and gates.
+5. Maintain a registry of formal, non-archived Crew sessions and a last-seen
+   revision or timestamp for each durable report.
+6. At turn entry and pre-final, perform a non-blocking manual snapshot of that
+   registry and copy only changed reports to the Captain's private working
+   context.
+7. Let the Captain update ownership, dependencies, and gates, while showing the
+   user only synthesized conclusions, risks, and decisions.
 
 Radio is disabled because the host cannot prove fresh idle state. Manual copy
 is a valid, safe degradation path, not a compatibility failure.

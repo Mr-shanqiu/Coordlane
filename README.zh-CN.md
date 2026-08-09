@@ -78,7 +78,7 @@ python3 /path/to/skill-creator/scripts/quick_validate.py skills/coordlane
 | --- | --- |
 | Native | 宿主已经提供并验证了对应原语。 |
 | Hook-assisted | 通过用户审阅并主动启用的生命周期 Hook 实现。 |
-| Polling | Captain 只在有限、自然的检查点读取持久化状态。 |
+| Polling | Captain 在强制回合门禁或其他有限检查点读取持久化状态。 |
 | Manual | 用户在会话之间复制提示词或报告。 |
 
 详见带日期的[平台能力矩阵](docs/research/capability-matrix.md)。每个适配器
@@ -92,6 +92,9 @@ python3 /path/to/skill-creator/scripts/quick_validate.py skills/coordlane
 - `completed` 只表示当前授权 Workstream 完成，不表示整个 Mission 完成。
 - “完成”不等于“释放”。释放还需要提交说明、工作区核对、验证证据、不再
   修改承诺、重叠检查和外部副作用说明。
+- Captain 的每个回合都有两个完整性门禁：收到用户消息后、开始处理前执行
+  一次非阻塞增量扫描；准备输出最终回复前再执行一次。只扫描已登记且未归档
+  的 Crew，分会话通知不能替代这两次扫描。
 - Radio 是可选功能。V1 不重试，也不创建后台监控程序。
 
 ## 先行项目与独立范围
@@ -106,8 +109,9 @@ Orchestrator、Nelson、Orca 以及通用团队编排 Skill 都与本项目部�
 
 ## 当前状态
 
-第一阶段只形成可审阅的本地草案。本项目没有创建或推送 GitHub 仓库。
-公开发布前必须完成：
+第一阶段已经形成可审阅的公开草案：
+[`Mr-shanqiu/Coordlane`](https://github.com/Mr-shanqiu/Coordlane)。正式版本标签
+发布前必须完成：
 
 1. 用户审阅协议与适配器；
 2. 对 `Coordlane` 再做一次可用性与商标核验；

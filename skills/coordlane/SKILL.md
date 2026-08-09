@@ -24,8 +24,11 @@ current host exposes the claimed capabilities.
    isolated branch or worktree for substantial code changes.
 5. **Dispatch Crew.** Give each Crew the completed crew prompt from
    `../../templates/crew-prompt.md`. Require a read-only inventory before edits.
-6. **Monitor at natural checkpoints.** Use bounded host-native reads when
-   available. Do not create background daemons or continuous polling.
+6. **Monitor with the dual turn gate.** On every user-facing turn, run a
+   non-blocking scan after the user message and before work, then another after
+   preparing the answer and before the final response. Scan only registered,
+   non-archived formal execution sessions; use stored cursors or revisions to
+   read only changes and stay silent when none exist.
 7. **Review terminal reports.** Accept `completed`, `blocked`, or
    `decision_needed` only when the status matches evidence. Treat Crew
    completion as local to its authorized Workstream.
@@ -50,6 +53,19 @@ current host exposes the claimed capabilities.
   Polling or Manual.
 - Never enable third-party hooks by default.
 
+## Enforce the dual turn gate
+
+Treat Crew notification as a fast path, never a completeness guarantee. For
+both the turn-entry and pre-final scan, use `timeoutMs=0` or an equivalent
+non-blocking snapshot. Absorb changed reports privately, update coordination
+state, and show the user only relevant conclusions, risks, and decisions.
+
+Any message containing only a numeric identifier triggers an immediate global
+scan, but does not replace either mandatory turn scan. If pre-final changes
+affect the draft, revise it once; never recurse into a scan loop. Do not scan
+unregistered helpers or archived sessions. Do not paste raw reports into the
+Captain conversation or create a background polling loop.
+
 ## Use terminal reports
 
 Require this exact header:
@@ -68,8 +84,8 @@ Radio is optional. At a terminal state, query Captain status once. Send one
 message containing only the Crew ID only if the status is explicitly and
 freshly idle. Send nothing for active, unknown, stale, unavailable, failed, or
 not-loaded state. Never attach a summary, retry, loop, poll, schedule a timer,
-or create an automation. Captain must also inspect Crew at natural checkpoints
-because Radio is best-effort.
+or create an automation. The Captain's dual turn gate remains mandatory because
+Radio is best-effort.
 
 Disable Radio when the adapter cannot verify idle state without interruption.
 

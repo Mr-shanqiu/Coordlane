@@ -22,6 +22,11 @@ gate, but V1 does not ship or enable such a hook. Non-built-in Skill hooks may
 require an explicit trust setting, which is intentionally not part of the
 default installation.
 
+The leader must run the core turn-entry and pre-final scans independently of
+those events. Use the installed version's non-blocking team status snapshot and
+stored task revision when verified. Otherwise downgrade the gate to an explicit
+Manual changed-report check. A lifecycle hook is only a fast path.
+
 ## Known limits affecting the protocol
 
 - Agent Teams are experimental, have no member session recovery, and can show

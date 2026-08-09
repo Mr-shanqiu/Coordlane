@@ -20,6 +20,12 @@ Disable Radio. The official product pages located during this review confirm
 custom Skills and multiple experts, but they do not establish the precise
 lifecycle and messaging primitives required by conditional Radio.
 
+Treat the dual turn gate as Manual unless the current build exposes a verified
+non-blocking status snapshot and change token. At turn entry and pre-final,
+check only the user-maintained registry of formal, non-archived sessions and
+compare its last recorded revision. Do not scrape conversation storage to
+simulate incremental reads.
+
 Do not add third-party hooks, background watchers, or credential-dependent
 connectors to compensate for missing evidence.
 

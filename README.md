@@ -89,7 +89,7 @@ its location varies by installation.
 | --- | --- |
 | Native | The host exposes verified primitives for the operation. |
 | Hook-assisted | A reviewed, opt-in lifecycle hook can implement it. |
-| Polling | The Captain reads durable state at bounded natural checkpoints. |
+| Polling | The Captain reads durable state at mandatory turn gates or other bounded checkpoints. |
 | Manual | People copy prompts or reports between sessions. |
 
 See the dated [capability matrix](docs/research/capability-matrix.md). An
@@ -107,6 +107,9 @@ promoted to Native.
 - Completion does not release files. Release requires a commit disposition,
   workspace check, validation evidence, a no-more-edits promise, overlap
   review, and external-side-effect disclosure.
+- Every Captain turn has two completeness gates: a non-blocking incremental
+  scan of registered, non-archived Crew at turn entry and again before the
+  final response. Crew notifications never replace these scans.
 - Radio is optional. It never retries or creates a background watcher in V1.
 
 ## Prior art and independent scope
@@ -123,8 +126,9 @@ comparison, not legal advice or a trademark clearance.
 
 ## Project status
 
-Phase 1 is a reviewable local draft. No GitHub repository has been created or
-pushed by this project. Public release remains gated on:
+Phase 1 is a reviewable public draft at
+[`Mr-shanqiu/Coordlane`](https://github.com/Mr-shanqiu/Coordlane). A tagged
+release remains gated on:
 
 1. user review of the protocol and adapters;
 2. a fresh availability and trademark review for `Coordlane`;

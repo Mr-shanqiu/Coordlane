@@ -15,6 +15,7 @@ public compatibility claim.
 | Direct agent messaging | Native in current host | Native in Agent Teams | Native in Agent Teams | Unverified | Manual |
 | Fresh idle/status query | Native in current host | Team status/idle events; exact query not claimed | Status UI and idle hooks | Unverified | Unavailable |
 | Terminal callback | Native result delivery | Hook-assisted | Hook-assisted, beta | Unverified | Manual |
+| Dual turn gate | Native in a supporting host with bounded cursor reads; otherwise Manual | Native or Manual by installed team surface | Native or Manual by installed team surface | Manual; incremental API unverified | Manual registry check |
 | Conditional pure-ID Radio | Native only when fresh idle is exposed | Disabled by default | Hook-assisted, not shipped | Disabled | Disabled |
 | Worktree isolation | Git/manual or host support | Official worktree sessions | Manual Git worktrees | Unverified | Manual Git |
 | No-hook fallback | Manual | Manual | Manual | Manual | Manual |

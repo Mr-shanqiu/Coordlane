@@ -3,11 +3,11 @@
 Phase 2 should remain protocol-first. It must not introduce a server, daemon,
 telemetry, automatic merge, or automatic deployment.
 
-## 1. Publication readiness
+## 1. Tagged-release readiness
 
 - Repeat exact-name searches for `Coordlane` across GitHub, package registries,
   Skill catalogs, and the general web.
-- Ask the user to approve the final name, repository owner, and public release.
+- Confirm the public repository remains under the approved owner and name.
 - Obtain appropriate trademark or legal review if the project will become a
   commercial brand.
 - Add contribution and security-reporting guidance before accepting external
@@ -44,5 +44,5 @@ telemetry, automatic merge, or automatic deployment.
 - Keep the Skill standalone if that is sufficient.
 - Consider a plugin only if installation metadata or reviewed adapters require
   one; do not bundle hooks by default.
-- Create the public GitHub repository and push only after the user approves the
-  local Phase 1 commit and all publication gates above.
+- Create a tagged release only after the user approves the cross-host evidence
+  and all release gates above.

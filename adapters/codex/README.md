@@ -18,7 +18,7 @@ not a promise that every Codex surface or future version exposes the same API.
 | Create Crew | Spawn a subagent or user-owned task, according to host semantics | Start a separate session manually |
 | Check Crew | List agents/tasks and use bounded wait/read | Ask user to open the Crew report |
 | Radio | Query status once, then direct-message only if explicitly idle | Disabled |
-| Silent pull | Bounded status/read at Captain checkpoints | Manual report copy |
+| Dual turn gate | Non-blocking status/read snapshot at turn entry and pre-final, using the latest cursor when exposed | Manual changed-report check |
 
 ## Guardrails
 
@@ -26,6 +26,11 @@ not a promise that every Codex surface or future version exposes the same API.
   user-owned task only when the user explicitly asks for a separate task.
 - Do not assume a newly created task is complete; wait or read it explicitly.
 - Do not implement Radio with retries, loops, timers, or automations.
+- When the surface exposes task cursors, call its bounded wait/read primitive
+  with `timeoutMs=0` and the stored cursor at both turn gates. Otherwise use the
+  closest non-blocking revision snapshot and label the degradation.
+- Scan only registered, non-archived formal execution tasks. Do not treat every
+  sidebar chat or temporary helper as Crew.
 - Treat `active`, absent, stale, failed, or unknown status as not idle.
 - Keep full reports in Crew contexts and synthesize user-facing conclusions.
 - Do not claim a stable public thread API from a current-session tool inventory.
