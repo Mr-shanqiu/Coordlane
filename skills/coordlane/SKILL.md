@@ -1,12 +1,14 @@
 ---
 name: coordlane
-description: Coordinate complex work across multiple AI sessions with one Captain, stable worker registration, identity-bound assignments and acknowledgements, exclusive ownership, dependency gates, durable reports, quiet full-sweep discovery, independent validation, and traceable integration. Use when two or more AI sessions or logical agents share a mission, repository, dependency chain, user decision, or release boundary.
+description: Coordinate complex Codex work across multiple tasks with one Captain, stable worker registration, identity-bound assignments and acknowledgements, exclusive ownership, dependency gates, durable reports, Hook-enforced terminal notification, quiet full-sweep discovery, independent validation, and traceable integration. Use when two or more Codex tasks share a mission, repository, dependency chain, user decision, or release boundary. This Skill is bundled inside the Coordlane plugin and is not a separate installation product.
 ---
 
 # Coordlane
 
 Act as the Captain unless the user explicitly assigns a Crew role. Keep
 coordination truth in explicit state, not in session titles or chat memory.
+Use the repository-root `.coordlane/` state directory so bundled Hooks can
+discover it; use `COORDLANE_STATE_DIR` only for an explicit alternate path.
 
 ## Run the Captain loop
 
@@ -67,26 +69,21 @@ the user asks for status. Stay silent on unchanged snapshots. Surface only
 completed outcome, risk, Captain validation, integration, next step, and needed
 decisions.
 
-## Separate consistency from sleeping liveness
+## Enforce terminal notification
 
-Turn-entry and Pre-final provide **active-turn consistency** only. After the
-Captain emits final, no prompt rule can provide liveness because no controller
-turn is running. If the Mission requires completion discovery within an SLA,
-configure a real host heartbeat or event broker before leaving workers active.
-Treat its interval as a target, not an SLA, unless the host provides and passes
-a maximum scheduler-delay guarantee.
+Before a Crew returns final, require this producer order:
 
-Arm the heartbeat only while a monitored Assignment is nonterminal or a
-terminal revision is unread. Each heartbeat performs only a bounded status and
-cursor comparison. Wake the full Captain only for terminal, failed, blocked, or
-decision-needed change. After ingest leaves no running monitored Assignment and
-no unread terminal revision, stop the heartbeat automatically.
+1. atomically persist the complete terminal report;
+2. emit its digest-bound, idempotent event;
+3. send the bound Captain exactly one pure `worker_id` message;
+4. record the matching delivery receipt through `PostToolUse`; and
+5. pass the plugin `Stop` Hook before returning final.
 
-Worker notification is never the sleeping-controller mechanism. Terminal state
-must remain in the durable report/event ledger when notification fails. If no
-heartbeat or broker exists, record `liveness_mode=next_turn_only` and state
-honestly that results synchronize only when the user or another event starts
-the next Captain turn. Never claim real-time reporting in that mode.
+The message is only a wake hint. The durable report/event ledger remains truth.
+If a required step is absent, let `Stop` request one continuation. Do not loop
+indefinitely: after one unconfirmed delivery attempt, record degraded delivery,
+leave the event pending, and stop. The Captain recovers it during the next full
+sweep. Never create recurring heartbeat automations.
 
 ## Enforce state boundaries
 
@@ -103,15 +100,15 @@ the next Captain turn. Never claim real-time reporting in that mode.
 
 ## Apply quiet notification rules
 
-Prefer a platform completion observer or reviewed post-turn hook. Otherwise
-write the complete durable report first, then emit an event containing only
+Use the reviewed plugin `Stop` and `PostToolUse` Hooks. Write the complete
+durable report first, then emit an event containing only
 worker, assignment, type, priority, revision, and digest. Pending P1 terminal
 events remain durable while Captain is active; P0 safety events surface at the
 next tool boundary; P2 progress is query-only.
 
 A pure numeric identifier can trigger an immediate global full sweep, but is an
-opportunistic transport hint. Never require the same agent to call a tool after
-its final answer. Never retry, loop, poll, or schedule numeric wake messages.
+opportunistic transport hint. Send it before final, after durable report and
+event creation. Never retry, loop, poll, or schedule numeric wake messages.
 
 ## Load companion resources
 

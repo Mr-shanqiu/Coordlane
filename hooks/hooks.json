@@ -1,0 +1,42 @@
+{
+  "description": "Enforce Coordlane terminal report and one-shot notification gates.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$PLUGIN_ROOT/hooks/coordlane-hook.mjs\"",
+            "timeout": 5,
+            "statusMessage": "Starting Coordlane turn gate"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^send_message_to_thread$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$PLUGIN_ROOT/hooks/coordlane-hook.mjs\"",
+            "timeout": 5,
+            "statusMessage": "Recording Coordlane delivery"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$PLUGIN_ROOT/hooks/coordlane-hook.mjs\"",
+            "timeout": 5,
+            "statusMessage": "Checking Coordlane terminal gate"
+          }
+        ]
+      }
+    ]
+  }
+}

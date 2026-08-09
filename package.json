@@ -6,10 +6,10 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "test": "node tests/validate.mjs && node tests/reference.test.mjs && node tests/codex-adapter.test.mjs",
+    "test": "node tests/validate.mjs && node tests/reference.test.mjs && node tests/hooks.test.mjs && node tests/codex-adapter.test.mjs",
     "test:schemas": "node tests/validate.mjs",
     "test:scenarios": "node tests/reference.test.mjs",
-    "test:codex": "node tests/codex-adapter.test.mjs"
+    "test:codex": "node tests/hooks.test.mjs && node tests/codex-adapter.test.mjs"
   },
   "devDependencies": {
     "ajv": "^8.17.1"

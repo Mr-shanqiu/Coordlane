@@ -9,7 +9,8 @@ Do not begin another platform adapter until Codex acceptance is complete.
 - Verify create, delivery, ACK readback, user-direct steering detection,
   per-task cursor scans, two simultaneous completions, archive, and worktree
   identity on the exact desktop version.
-- Test standalone Skill installation and implicit/explicit triggering.
+- Install the plugin, review its Hooks, and test bundled Skill triggering.
+- Verify `Stop` enforcement and `PostToolUse(send_message_to_thread)` receipts.
 - Compare repository ledger state before and after a Captain restart.
 - Downgrade any mapping that lacks repeatable evidence.
 
@@ -17,8 +18,8 @@ Do not begin another platform adapter until Codex acceptance is complete.
 
 - Add contribution and security-reporting guidance.
 - Repeat exact-name and prior-art checks before a tagged release.
-- Decide whether the Skill alone is sufficient; add no plugin or hook unless a
-  concrete Codex installation need justifies it.
+- Publish one plugin installation unit; do not expose a standalone Skill
+  installation path.
 - Create no release until the user approves live evidence and release gates.
 
 ## 3. Deferred platform expansion

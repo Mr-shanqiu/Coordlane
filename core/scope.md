@@ -35,9 +35,8 @@ dependencies, evidence, decisions, and release authority.
 
 V1 is not a server, task database, chat client, agent runtime, permanent
 watcher, deployment tool, merge bot, credential broker, telemetry system, or
-conversation archive. An opt-in host heartbeat may run only while monitored
-work is active or unread, then must stop. V1 does not make third-party hooks
-trusted.
+conversation archive. V1 does not run scheduled heartbeat polling and does not
+make plugin Hooks trusted without explicit user review.
 
 ## Differentiation boundary
 

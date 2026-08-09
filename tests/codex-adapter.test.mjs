@@ -9,11 +9,11 @@ const requiredOperations = [
   "wait_worker",
   "persist_report",
   "emit_event",
+  "deliver_notification",
+  "enforce_terminal_gate",
+  "record_delivery_receipt",
   "scan_events",
   "ack_event",
-  "arm_liveness",
-  "probe_liveness",
-  "disarm_liveness",
   "archive_worker",
   "workspace_status",
   "integrate_change"
@@ -22,17 +22,21 @@ const requiredOperations = [
 assert.equal(manifest.adapter, "codex-desktop");
 assert.equal(manifest.active_target, true);
 assert.equal(manifest.capability_level, 2);
-assert.equal(manifest.completion_observer, "unverified");
+assert.equal(manifest.completion_observer, "reviewed_stop_hook_not_live_verified");
 assert.deepEqual(Object.keys(manifest.operations), requiredOperations);
 assert.equal(manifest.operations.dispatch_assignment.status, "available_delivery_only");
 assert.equal(manifest.operations.wait_worker.status, "available_first_change_only");
-assert.equal(manifest.operations.emit_event.status, "opportunistic_only");
+assert.equal(manifest.operations.emit_event.status, "required_before_stop");
+assert.equal(manifest.operations.deliver_notification.status, "one_shot_stop_gated");
+assert.equal(manifest.operations.enforce_terminal_gate.status, "implemented_requires_trust");
 assert.deepEqual(manifest.invariants.stable_identity, ["thread_id", "host_id"]);
 assert.equal(manifest.invariants.title_is_routing_key, false);
 assert.equal(manifest.invariants.send_equals_ack, false);
 assert.equal(manifest.invariants.multi_target_wait_is_full_sweep, false);
 assert.equal(manifest.invariants.raw_report_in_user_chat, false);
 assert.equal(manifest.invariants.numeric_wake_is_truth, false);
+assert.equal(manifest.invariants.scheduled_heartbeat_enabled, false);
+assert.equal(manifest.invariants.standalone_skill_install, false);
 
 const codexReadme = fs.readFileSync("adapters/codex/README.md", "utf8");
 for (const term of [
@@ -45,14 +49,24 @@ for (const term of [
   "timeoutMs=0",
   "first change",
   "full sweep",
-  "after final",
+  "`Stop` Hook",
+  "PostToolUse",
   "final_gate_passed",
   "freshness=unknown",
-  "Sleeping-controller heartbeat",
-  "does not support a strict 60-second"
+  "No scheduled heartbeat",
+  "distributed as one plugin"
 ]) {
   assert.ok(codexReadme.includes(term), `Codex adapter is missing: ${term}`);
 }
+
+const plugin = JSON.parse(fs.readFileSync(".codex-plugin/plugin.json", "utf8"));
+assert.equal(plugin.name, "coordlane");
+assert.equal(plugin.skills, "./skills/");
+assert.equal(fs.existsSync("hooks/hooks.json"), true);
+const hooks = JSON.parse(fs.readFileSync("hooks/hooks.json", "utf8"));
+assert.ok(hooks.hooks.Stop);
+assert.ok(hooks.hooks.PostToolUse);
+assert.ok(hooks.hooks.UserPromptSubmit);
 
 for (const adapter of ["claude-code", "codebuddy", "workbuddy", "generic"]) {
   const text = fs.readFileSync(`adapters/${adapter}/README.md`, "utf8");

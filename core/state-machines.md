@@ -46,11 +46,26 @@ a new revision and never mutates old content.
 
 ```text
 pending -> delivered -> acknowledged
+pending ----------------> acknowledged
 ```
 
-Delivery does not mean report consumption. Acknowledgement is written only
-after the matching durable report passed digest verification and was consumed.
-The idempotency key is `worker_id + assignment_id + report_revision`.
+`pending -> acknowledged` is the lost-delivery recovery path when a Captain
+full sweep consumes the durable report directly. Delivery does not mean report
+consumption. Acknowledgement is written only after the matching durable report
+passed digest verification and was consumed. The idempotency key is
+`worker_id + assignment_id + report_revision`.
+
+## Crew terminal gate
+
+```text
+report durable -> event pending -> one-shot wake attempted
+-> delivery receipt | delivery degraded -> Stop allowed
+```
+
+The plugin `Stop` Hook grants one continuation when evidence is missing. It
+must not loop forever. A second unconfirmed transport attempt records
+`delivery_degraded_at`; the durable event remains pending for the Captain's
+next full sweep.
 
 ## Supersession and invalidation
 

@@ -1,0 +1,23 @@
+{
+  "name": "coordlane",
+  "version": "0.1.0",
+  "description": "Coordinate multiple Codex tasks with durable handoffs, enforced terminal notification, ownership gates, and quiet Captain review.",
+  "author": {
+    "name": "Mr-shanqiu",
+    "url": "https://github.com/Mr-shanqiu"
+  },
+  "homepage": "https://github.com/Mr-shanqiu/Coordlane",
+  "repository": "https://github.com/Mr-shanqiu/Coordlane",
+  "license": "MIT",
+  "keywords": ["codex", "multi-agent", "coordination", "handoff"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Coordlane",
+    "shortDescription": "Keep parallel Codex work organized and auditable.",
+    "longDescription": "One coordinating brain for safe parallel Codex tasks, durable reports, quiet handoffs, validation, and traceable integration.",
+    "developerName": "Mr-shanqiu",
+    "category": "Productivity",
+    "capabilities": ["Coordination", "Lifecycle hooks", "Local state"],
+    "defaultPrompt": "Coordinate this project with Coordlane."
+  }
+}

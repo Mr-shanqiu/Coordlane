@@ -8,7 +8,8 @@ acceptance is complete.
 
 | Coordlane capability | Current Codex desktop evidence | V1 classification |
 | --- | --- | --- |
-| Portable Skill | Official Skill folder and frontmatter documentation | Verified packaging |
+| Plugin with bundled Skill | Standard manifest plus internal Skill | Locally validated packaging |
+| Reviewed lifecycle Hooks | `Stop` and `PostToolUse` are documented Codex events | Implemented; live trust acceptance pending |
 | Stable task identity | Task listing returns task ID and host ID | Current-host Native |
 | Create user-owned task | Available, but policy requires explicit user request | Current-host Native with authority gate |
 | Dispatch message | Directed task message is available | Delivery only, not ACK |
@@ -16,9 +17,9 @@ acceptance is complete.
 | Bounded snapshot | `timeoutMs=0` task wait is available | Current-host Native |
 | Incremental cursor | Wait returns per-task cursor | Current-host Native |
 | Multi-target wait | Wakes on first completion or attention event | Latency hint, not full sweep |
-| Completion observer after final | Not established by current inventory | Unavailable/unverified |
+| Terminal gate before final | Plugin `Stop` Hook | Implemented locally; live acceptance pending |
 | Durable report | Completed task record; optional filesystem report artifact | Level 2 adapter rule |
-| Notification after durable report | Directed message before final only when artifact already exists | Opportunistic |
+| Notification after durable report | One-shot directed message before final, receipt captured by `PostToolUse` | Hook-gated; live acceptance pending |
 | Per-task full sweep | Iterate registered tasks with individual cursors | Required completeness gate |
 | Executable Pre-final guard | Reference state store records freshness and refuses stale finalization | Locally verified; host wrapper required |
 | Task archive | Archive tool available | Native after close gates |
@@ -27,8 +28,9 @@ acceptance is complete.
 
 ## Evidence boundary
 
-OpenAI documents Skill creation and installation at
-[Build skills](https://learn.chatgpt.com/docs/build-skills). Task primitives in
+OpenAI documents lifecycle Hooks at
+[Hooks](https://learn.chatgpt.com/docs/hooks) and plugin packaging at
+[Package plugins](https://developers.openai.com/plugins/build/plugins). Task primitives in
 this table came from the current Codex desktop host inventory, not a stable
 public cross-surface API reference. Reverify tool names, parameters, cursor
 semantics, and authority rules on the installed host before each conformance
@@ -40,7 +42,8 @@ claim.
 - A multi-target wait returns the first terminal/attention target and does not
   prove all other targets are unchanged.
 - Successful send does not prove target acknowledgement.
-- No verified observer can call a tool after the worker's final answer.
+- `send_message_to_thread` Hook coverage and receipt shape still need live
+  verification on the installed desktop host.
 - A live create/dispatch/ACK/completion test requires explicit authorization to
   create separate user-owned test tasks.
 
@@ -50,7 +53,7 @@ The projectless create/ACK/wait/cursor/send/archive path was live-tested on
 2026-08-09. Worktree and durable digest acceptance remain open; see the
 [acceptance record](../testing/codex-live-acceptance-2026-08-09.md).
 
-A temporary Codex heartbeat also discovered a silent post-final completion,
-but at 110.67 seconds after completion on a nominal one-minute recurrence. It
-therefore proves eventual liveness, not a 60-second SLA. See the
+A removed Codex heartbeat experiment discovered a silent post-final completion
+after 110.67 seconds on a nominal one-minute recurrence. It is historical
+evidence for choosing one-shot Hook delivery, not a current feature. See the
 [sleeping-controller record](../testing/codex-sleeping-controller-acceptance-2026-08-09.md).

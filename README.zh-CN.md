@@ -4,7 +4,7 @@
 
 [English](README.md)
 
-Coordlane 是一套本地优先的协作协议和 Codex Skill，用一个 Captain 主控
+Coordlane 是一个本地优先的 Codex 插件，用一个 Captain 主控
 协调多个边界明确的 Crew 任务。它把范围、稳定身份、依赖、文件所有权、
 报告证据、独立复验和合流状态显式记录，同时避免把执行任务的原始输出塞进
 用户主对话。
@@ -19,6 +19,8 @@ Coordlane 是一套本地优先的协作协议和 Codex Skill，用一个 Captai
 - 记录任务来源，避免主控覆盖用户直接派给 Crew 的工作。
 - 在派发前检查依赖、所有权、工作区、运行开关和资源预算。
 - 终态报告先持久化，再以 revision 和 digest 绑定通知。
+- 经过用户审阅的 `Stop` Hook 会在 Crew 正常结束前强制检查终态证据和一次性
+  Captain 通知。
 - 在回合开始和回复前执行全量排空扫描，即使编号通知丢失、过早或 final 后
   无法发送，也能发现结果。
 - 可执行 finalizer 会拒绝缺少本回合全 registry 扫描、freshness 未知或仍有
@@ -40,22 +42,21 @@ Coordlane 是一套本地优先的协作协议和 Codex Skill，用一个 Captai
 
 ## 当前可运行内容
 
-- 可移植的 [`coordlane` Skill](skills/coordlane/SKILL.md)；
+- 一个可安装的 Codex 插件，内置 [`coordlane` Skill](skills/coordlane/SKILL.md)；
+- 经过审阅后启用的 `Stop` 和 `PostToolUse` 生命周期 [Hooks](hooks/hooks.json)；
 - Captain、Crew、报告和项目地图[模板](templates/)；
 - 7 个机器可读 [Schema](schemas/)；
 - Node.js 标准库实现的[文件状态仓参考](reference/README.md)；
 - 当前宿主的 [Codex desktop 适配器](adapters/codex/README.md)；
 - 15 个真实失败场景测试，以及 Schema、格式、链接、样例安全和适配契约检查。
 
-本项目不提供服务器、daemon、遥测、对话保存、密钥处理、自动合并、自动
-迁移、自动部署、自动发布、运行开关切换，也不会默认启用第三方 Hook。
-经过授权的宿主 heartbeat 只在仍有运行任务或未读终态时临时启用，摄取完成
-后必须自动停止。
+本项目不提供服务器、daemon、定时心跳、遥测、对话保存、密钥处理、自动
+合并、自动迁移、自动部署、自动发布或运行开关切换。插件 Hook 只有在用户
+审阅并信任其准确内容后才运行。
 
-回合扫描解决 active-turn consistency，但无法在 final 之后凭空发现结果。
-主控休眠期若需要 SLA，必须配置真正的 heartbeat/event broker：动态启停、
-只比较轻量状态和 cursor、仅在终态变化时唤醒完整主控。没有 broker 时只能
-承诺“下次用户或外部事件唤醒后同步”，不能称为实时汇报。
+回合扫描解决 active-turn consistency；主控休眠期间由 Crew 在 durable event
+形成后发送一次通知。若传输失败，事件继续保持 pending，由 Captain 下次回合
+恢复，不进行持续轮询，也不把降级状态称为实时汇报。
 
 ## 快速开始
 
@@ -63,26 +64,28 @@ Coordlane 是一套本地优先的协作协议和 Codex Skill，用一个 Captai
 npm install
 npm test
 python3 /path/to/skill-creator/scripts/quick_validate.py skills/coordlane
+python3 /path/to/plugin-creator/scripts/validate_plugin.py .
 ```
 
-把 `skills/coordlane/` 复制到 Codex 支持的 Skill 目录，或直接在本仓库使用。
-主控使用 [`templates/captain-prompt.md`](templates/captain-prompt.md)，填写
+插件是唯一安装单元，不要再单独复制或安装其中的 Skill。本地开发阶段先按上面
+命令验证；插件发布或加入受信 marketplace 后，只安装 `coordlane` 插件并审阅
+其 Hooks。主控使用 [`templates/captain-prompt.md`](templates/captain-prompt.md)，填写
 [`templates/project-map.md`](templates/project-map.md)，再用填写完整的
 [`templates/crew-prompt.md`](templates/crew-prompt.md)派发每个正式 Crew。
 
 文件状态仓示例：
 
 ```sh
-node reference/coordlane.mjs init work/demo-state fictional-library
-node reference/coordlane.mjs status work/demo-state
-node reference/coordlane.mjs sweep work/demo-state
+node reference/coordlane.mjs init .coordlane fictional-library
+node reference/coordlane.mjs bind-captain .coordlane captain-thread local
+node reference/coordlane.mjs status .coordlane
+node reference/coordlane.mjs sweep .coordlane
 ```
 
 ## Codex 可靠性规则
 
 当前 Codex desktop 提供稳定 ID、任务列表、读取、消息投递、有界等待、
-cursor 和归档能力，但尚无可依赖的“final 完成后再通知”的 observer。因此
-Coordlane 按 Level 2 运行：
+cursor 和归档能力。Coordlane 按带生命周期 Hook 的 Level 2 运行：
 
 1. 使用 `assignment_id` 派发；
 2. 读取目标任务，确认 ACK 闭环；
@@ -90,7 +93,9 @@ Coordlane 按 Level 2 运行：
 4. 在 turn-entry 和 pre-final 执行非阻塞全量扫描；
 5. 多目标 wait 只用于发现第一个变化，不能代替 full sweep；
 6. 只消费已持久化且 revision、digest 匹配的报告；
-7. 纯编号只能是可选提示，不能作为真相源或完整性保证。
+7. durable report/event 形成后才允许发送一次纯编号；
+8. `PostToolUse` 记录投递，`Stop` 强制终态门禁；
+9. 纯编号只是提示，不能作为真相源或完整性保证。
 
 Pre-final 门禁适用于每一次回答，即使本轮问题与 Crew 无关。扫描失败时必须
 记录 `freshness=unknown`，不得声称已经同步。

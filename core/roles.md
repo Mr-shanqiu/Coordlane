@@ -34,8 +34,10 @@ Execute one explicitly authorized Workstream. A Crew must:
 5. test the actual change and record evidence;
 6. commit intentional changes or explain why no commit exists;
 7. disclose runtime switches and external side effects; and
-8. atomically persist one revisioned terminal report before any wake hint; and
-9. stop editing until the Captain issues a revision or new assignment.
+8. atomically persist one revisioned terminal report and event before wake;
+9. send the bound Captain one pure identifier and record its receipt; and
+10. pass the plugin terminal Hook, then stop editing until the Captain issues a
+   revision or new assignment.
 
 A Crew cannot declare the Mission complete, integrate other Workstreams, or
 authorize Launch actions.

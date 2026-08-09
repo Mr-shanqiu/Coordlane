@@ -8,8 +8,10 @@
     "schema_version", "event_id", "idempotency_key", "sequence", "project_id",
     "worker_id", "thread_id", "host_id", "assignment_id", "event_type",
     "priority", "report_revision", "report_digest", "workspace", "branch",
-    "head", "created_at", "requires_user_decision", "status", "delivered_at",
-    "acknowledged_at", "user_interrupted"
+    "head", "created_at", "requires_user_decision", "status",
+    "delivery_attempts", "delivery_id", "delivery_error",
+    "delivery_degraded_at", "delivered_at", "acknowledged_at",
+    "user_interrupted"
   ],
   "properties": {
     "schema_version": { "const": "1.0.0" },
@@ -31,10 +33,38 @@
     "created_at": { "type": "string", "format": "date-time" },
     "requires_user_decision": { "type": "boolean" },
     "status": { "enum": ["pending", "delivered", "acknowledged"] },
+    "delivery_attempts": { "type": "integer", "minimum": 0 },
+    "delivery_id": { "type": ["string", "null"], "minLength": 1 },
+    "delivery_error": { "type": ["string", "null"], "minLength": 1 },
+    "delivery_degraded_at": { "type": ["string", "null"], "format": "date-time" },
     "delivered_at": { "type": ["string", "null"], "format": "date-time" },
     "acknowledged_at": { "type": ["string", "null"], "format": "date-time" },
     "user_interrupted": { "const": false }
   },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "delivered" } }, "required": ["status"] },
+      "then": {
+        "properties": {
+          "delivery_attempts": { "type": "integer", "minimum": 1 },
+          "delivery_id": { "type": "string", "minLength": 1 },
+          "delivered_at": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "delivery_degraded_at": { "type": "string" } },
+        "required": ["delivery_degraded_at"]
+      },
+      "then": {
+        "properties": {
+          "delivery_attempts": { "type": "integer", "minimum": 1 },
+          "delivery_error": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  ],
   "$defs": {
     "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
     "nonEmpty": { "type": "string", "minLength": 1 }

@@ -5,7 +5,7 @@
 
 [简体中文](README.zh-CN.md)
 
-Coordlane is a local-first coordination protocol and Codex Skill for complex
+Coordlane is a local-first Codex plugin for complex
 work split across one Captain and multiple bounded Crew tasks. It keeps scope,
 stable identity, dependencies, file ownership, report evidence, validation,
 and integration state explicit—without turning raw worker output into user
@@ -22,6 +22,8 @@ directories are deferred research notes, not support claims.
   work.
 - Exclusive ownership and dependency preflight block unsafe parallel writes.
 - Terminal reports are revisioned, digest-bound, and durable before events.
+- A reviewed `Stop` Hook requires terminal evidence and a one-shot Captain
+  notification before a Crew can finish normally.
 - Turn-entry and pre-final full sweeps discover results even when wake messages
   are lost, early, or impossible after final output.
 - An executable finalizer refuses an answer when the current turn lacks a fresh
@@ -48,7 +50,8 @@ Read the [architecture](docs/architecture.md),
 
 ## Current runnable surface
 
-- a portable [`coordlane` Skill](skills/coordlane/SKILL.md);
+- one installable Codex plugin with a bundled [`coordlane` Skill](skills/coordlane/SKILL.md);
+- reviewed `Stop` and `PostToolUse` lifecycle [Hooks](hooks/hooks.json);
 - Captain, Crew, report, and project-map [`templates/`](templates/);
 - seven machine-readable [`schemas/`](schemas/);
 - a Node.js standard-library [filesystem reference](reference/README.md);
@@ -56,17 +59,15 @@ Read the [architecture](docs/architecture.md),
 - 15 executable failure-scenario tests plus schema, formatting, link, sample
   safety, and adapter-contract checks.
 
-Coordlane ships no server, daemon, telemetry, transcript store, secret handler,
-automatic merge, deployment, migration, release, runtime switch, or enabled
-third-party hook. An authorized host heartbeat is temporary and exists only to
-cover sleeping-controller liveness while monitored work is outstanding.
+Coordlane ships no server, daemon, scheduled heartbeat, telemetry, transcript
+store, secret handler, automatic merge, deployment, migration, release, or
+runtime switch. Plugin Hooks do not run until the user reviews and trusts their
+exact definitions.
 
-Turn scans provide active-turn consistency. They cannot discover a worker that
-finishes after final until another turn starts. For an SLA during that sleeping
-period, Coordlane requires a real heartbeat/event broker that arms dynamically,
-checks only status/cursors, wakes full ingest only on terminal change, and
-stops after the ledger is drained. Without it, the honest guarantee is “sync on
-the next user or external wake,” not real-time reporting.
+Turn scans provide active-turn consistency. Sleeping liveness uses a one-shot
+Crew notification after its durable event exists. If delivery fails, the event
+remains pending and the next Captain turn recovers it; Coordlane does not spend
+quota on recurring polling or describe degraded delivery as real-time.
 
 ## Quick start
 
@@ -74,10 +75,13 @@ the next user or external wake,” not real-time reporting.
 npm install
 npm test
 python3 /path/to/skill-creator/scripts/quick_validate.py skills/coordlane
+python3 /path/to/plugin-creator/scripts/validate_plugin.py .
 ```
 
-Copy `skills/coordlane/` into a supported Codex Skill location, or use it from
-this repository. Start the coordinating task with
+The plugin is the only installation unit. Do not install or copy its bundled
+Skill separately. During local development, validate the repository as above;
+after the plugin is published or added to an approved marketplace, install the
+`coordlane` plugin and review its Hooks. Start the coordinating task with
 [`templates/captain-prompt.md`](templates/captain-prompt.md), fill
 [`templates/project-map.md`](templates/project-map.md), and dispatch each formal
 Crew with a completed [`templates/crew-prompt.md`](templates/crew-prompt.md).
@@ -85,17 +89,17 @@ Crew with a completed [`templates/crew-prompt.md`](templates/crew-prompt.md).
 Use the filesystem model locally:
 
 ```sh
-node reference/coordlane.mjs init work/demo-state fictional-library
-node reference/coordlane.mjs status work/demo-state
-node reference/coordlane.mjs sweep work/demo-state
+node reference/coordlane.mjs init .coordlane fictional-library
+node reference/coordlane.mjs bind-captain .coordlane captain-thread local
+node reference/coordlane.mjs status .coordlane
+node reference/coordlane.mjs sweep .coordlane
 ```
 
 ## Codex reliability rules
 
 Current Codex desktop task tools provide stable IDs, listing, reading,
-delivery, bounded waiting, cursors, and archival. They do not establish a
-completion observer that can reliably send a message after final output.
-Coordlane therefore uses Level 2 orchestration:
+delivery, bounded waiting, cursors, and archival. Coordlane uses Level 2
+orchestration with reviewed lifecycle Hooks:
 
 1. dispatch with an `assignment_id`;
 2. verify target acknowledgement by reading the task;
@@ -103,7 +107,10 @@ Coordlane therefore uses Level 2 orchestration:
 4. run non-blocking full sweeps at turn entry and pre-final;
 5. treat multi-target wait as first-change latency optimization only;
 6. consume only durable, matching report revisions; and
-7. treat pure numeric wake as an optional hint, never truth or completeness.
+7. require durable report/event before a one-shot pure numeric wake;
+8. use `PostToolUse` to record delivery and `Stop` to enforce the terminal
+   gate; and
+9. treat the wake as a hint, never truth or completeness.
 
 The Pre-final gate applies to every answer, including questions unrelated to
 Crew. Scan failure records `freshness=unknown`; Coordlane must not claim that

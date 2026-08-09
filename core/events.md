@@ -23,13 +23,13 @@ The complete schema is [`../schemas/event.schema.json`](../schemas/event.schema.
 3. Persist it atomically as `durable`.
 4. Compute and record its digest.
 5. Emit an idempotent notification event.
-6. Optionally send a transport hint; then return the same report to the worker
-   session.
+6. Send one pure worker identifier to the bound Captain task.
+7. Record the matching transport receipt; then return the same report to the
+   worker session.
 
-A platform completion observer or reviewed post-turn hook is the strongest
-notification path. When no observer exists, durable-write-before-wake is the
-fallback. A plain numeric wake without a durable revision and digest is merely
-an opportunistic hint.
+The reviewed plugin `Stop` Hook enforces this order, and `PostToolUse` records a
+matching send receipt. A plain numeric wake without a durable revision and
+digest is merely an opportunistic hint.
 
 ## Consumer order
 
@@ -45,7 +45,6 @@ be harmless. A digest mismatch, missing report, stale attempt, or ownership
 epoch mismatch stops consumption and creates a Captain-visible risk.
 
 While the Captain sleeps, the durable ledger—not notification transport—is
-truth. A configured heartbeat compares only worker status, event cursor, and
-unread count. It wakes full report processing on terminal or decision changes
-and stops after the ledger is drained. Without that broker, discovery occurs at
-the next Captain turn.
+truth. The one-shot terminal message wakes the Captain when transport works.
+When transport is unavailable, the pending event is recovered at the next
+Captain turn. Coordlane does not run scheduled heartbeat polling.

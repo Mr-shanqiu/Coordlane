@@ -46,12 +46,11 @@ steps, and decisions—never a raw report unless explicitly requested.
     not run, is behind, has unread terminal results, or freshness is unknown.
     Batch and deduplicate ingestion, update the answer once, and never paste a
     raw report or scan recursively.
-11. Distinguish active-turn consistency from sleeping-controller liveness. If
-    workers remain running after final, arm a real heartbeat/event broker with
-    an explicit SLA. Its probe reads status/cursors only and wakes full review
-    only for terminal or decision events. Stop it automatically after all
-    monitored work is terminal and ingested. Without a broker, record
-    `liveness_mode=next_turn_only` and never claim real-time synchronization.
+11. Distinguish active-turn consistency from sleeping-controller liveness.
+    Crew terminal reports must pass the plugin `Stop` Hook after durable event
+    creation and one-shot notification. Never create recurring heartbeat
+    automations. If delivery degrades, recover the pending event at the next
+    full sweep and do not claim real-time synchronization.
 
 Use `{project_map}`, `{state_store}`, and the verified adapter at `{adapter}`.
 When host capability is unknown, downgrade to filesystem polling or manual

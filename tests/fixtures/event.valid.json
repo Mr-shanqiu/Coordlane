@@ -18,6 +18,10 @@
   "created_at": "2026-08-09T00:00:00.000Z",
   "requires_user_decision": false,
   "status": "pending",
+  "delivery_attempts": 0,
+  "delivery_id": null,
+  "delivery_error": null,
+  "delivery_degraded_at": null,
   "delivered_at": null,
   "acknowledged_at": null,
   "user_interrupted": false

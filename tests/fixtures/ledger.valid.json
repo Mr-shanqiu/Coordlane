@@ -7,17 +7,6 @@
   "last_sweep_cursor": 1,
   "unread_terminal_count": 0,
   "final_gate_passed": true,
-  "heartbeat": {
-    "broker": "codex_heartbeat",
-    "status": "stopped",
-    "sla_seconds": 60,
-    "monitored_running_count": 0,
-    "last_probe_at": "2026-08-09T00:01:00.000Z",
-    "last_probe_cursor": 1,
-    "wake_required": false,
-    "last_wake_reason": null,
-    "liveness_mode": "background_sla"
-  },
   "workers": [
     {
       "worker_id": "20",

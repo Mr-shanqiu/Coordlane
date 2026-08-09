@@ -45,8 +45,9 @@ assignment. `origin=user_direct` or `external` work must not be overwritten.
 Completion is another transaction:
 
 ```text
-build report -> atomic durable write -> digest -> event -> full sweep
--> consume -> Captain validation -> integrate or revise -> close and release
+build report -> atomic durable write -> digest -> event -> one-shot wake
+-> Stop gate -> full sweep -> consume -> Captain validation
+-> integrate or revise -> close and release
 ```
 
 A full sweep scans every registered, non-archived worker independently, using
@@ -74,15 +75,14 @@ has unread terminal revisions. Topic relevance never bypasses this guard.
 ## Two reliability domains
 
 **Active-turn consistency** uses Turn-entry, safe-point, and Pre-final sweeps
-while the Captain is executing. **Sleeping-controller liveness** begins after
-final and requires a host heartbeat or event broker. The former cannot satisfy
-the latter.
+while the Captain is executing. **Sleeping-controller liveness** uses the
+Crew's plugin-enforced, one-shot terminal wake after the durable event exists.
+If delivery degrades, the event remains pending for the next Captain turn.
+Coordlane runs no scheduled heartbeat polling.
 
-Heartbeat state is dynamic: arm when a monitored Assignment runs or a terminal
-revision is unread; probe only status/cursor metadata; wake full Captain review
-for terminal or decision change; disarm after ingestion leaves neither running
-work nor unread terminal state. Without a broker, the honest mode is
-`next_turn_only`, not real-time reporting.
+The plugin is the only installation unit. Its bundled Skill carries the model
+workflow; `Stop` enforces terminal evidence and `PostToolUse` records a matching
+delivery receipt. Hooks remain inactive until the user reviews and trusts them.
 
 ## Security and resource model
 

@@ -5,14 +5,13 @@ for Coordlane's state machines and Level 3 mailbox fallback. It is executable,
 but intentionally not a server or production orchestration platform.
 
 ```sh
-node reference/coordlane.mjs init work/demo-state fictional-library
-node reference/coordlane.mjs begin-turn work/demo-state
-node reference/coordlane.mjs status work/demo-state
-node reference/coordlane.mjs sweep work/demo-state
-node reference/coordlane.mjs pre-final work/demo-state
-node reference/coordlane.mjs finalize work/demo-state
-node reference/coordlane.mjs heartbeat-config work/demo-state codex_heartbeat 60
-node reference/coordlane.mjs heartbeat-probe work/demo-state
+node reference/coordlane.mjs init .coordlane fictional-library
+node reference/coordlane.mjs bind-captain .coordlane captain-thread local
+node reference/coordlane.mjs begin-turn .coordlane
+node reference/coordlane.mjs status .coordlane
+node reference/coordlane.mjs sweep .coordlane
+node reference/coordlane.mjs pre-final .coordlane
+node reference/coordlane.mjs finalize .coordlane
 ```
 
 The exported module implements worker registration, identity-bound assignment
@@ -26,12 +25,13 @@ full sweep and writes freshness fields. `finalize` exits unsuccessfully when a
 monitored registry has no current gate pass, the cursor is behind, unread
 terminal reports remain, or freshness is unknown.
 
-`heartbeat-config` records a real broker and SLA; `heartbeat-probe` performs a
-lightweight cursor/unread comparison. The model arms while monitored work runs
-or terminal state is unread and stops after ingestion. Without a configured
-broker it reports `next_turn_only`.
+The plugin's `Stop` and `PostToolUse` Hooks enforce one-shot terminal delivery.
+The reference store retains pending events when delivery degrades; no scheduled
+heartbeat process is included.
 
-State is stored under the chosen directory:
+State is stored under `.coordlane/` by default so plugin Hooks can discover it
+from any repository subdirectory. Set `COORDLANE_STATE_DIR` only when an
+explicit alternate state directory is required:
 
 ```text
 project.json
@@ -45,5 +45,5 @@ events/*.json
 
 Limitations: one local writer should own each record; filesystem and process
 permissions are the deployment boundary; no file locking, remote transport,
-authentication, daemon, hook installer, automatic Git mutation, or external
-side effect is included. Use it as an auditable model and test harness.
+authentication, daemon, automatic Git mutation, or external side effect is
+included. Use it as an auditable model and test harness.

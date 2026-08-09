@@ -2,8 +2,8 @@
 
 Status: **active V1 target**
 
-Current classification: **Level 2 — native tasks, no verified completion
-observer**
+Current classification: **Level 2 — native tasks with a reviewed terminal
+Hook gate; live Hook acceptance pending**
 
 Last host inventory: **2026-08-09**
 
@@ -21,7 +21,10 @@ current-host evidence and must be rechecked after host changes.
 | `read_worker` | `read_thread(threadId, hostId)` | Verify latest user message, assistant scope/start, origin, and active turn |
 | `wait_worker` | `wait_threads` | Returns the first change at a completed/needs-attention target; not a full sweep |
 | `persist_report` | Worker final task record and, when configured, the shared Coordlane report store | Terminal state must be complete before consumption |
-| `emit_event` | Optional one-shot message only after a durable artifact; otherwise omitted | Hint only; no post-final hook is assumed |
+| `emit_event` | Local digest-bound event after a durable report | Required before the Crew can stop |
+| `deliver_notification` | `send_message_to_thread` once with the pure `worker_id` | Transport hint; never report truth |
+| `enforce_terminal_gate` | Plugin `Stop` Hook | Refuses a normal stop until report/event and delivery evidence exist |
+| `record_delivery_receipt` | Plugin `PostToolUse` for `send_message_to_thread` | Records only a matching Captain target and pure worker ID |
 | `scan_events` | per-task `wait_threads(timeoutMs=0, afterCursor)` or changed `read_thread` snapshot | Iterate every registered task and retain each cursor |
 | `ack_event` | Captain consumption ledger | Only after digest/identity verification and report consumption |
 | `archive_worker` | `set_thread_archived` after assignment close and event drain | Never archive active work |
@@ -90,41 +93,45 @@ to reduce latency while otherwise waiting. Do not wait on the calling task.
 
 ## Completion and quiet output
 
-The current host inventory does not establish a post-final completion observer
-that can send a wake after a task's final answer. Therefore:
+Coordlane is distributed as one plugin. Its bundled Skill describes the
+workflow; its reviewed Hooks enforce the terminal boundary. There is no
+standalone Skill installation path.
 
-- prefer the completed task record as the durable source and safe-point scans
-  as the completeness gate;
-- allow a wake only after a separate durable report artifact exists;
-- never require a same-turn tool call after final output;
-- never retry, loop, schedule, or background-poll pure numeric messages; and
-- never insert raw Crew reports into the Captain's user conversation.
+The Crew producer order is:
 
-## Sleeping-controller heartbeat
+1. persist the terminal report atomically;
+2. emit the digest-bound event;
+3. send one pure `worker_id` to the bound Captain task;
+4. let `PostToolUse` record the matching delivery receipt; and
+5. let `Stop` verify the evidence before final output.
 
-Use the Codex heartbeat automation only when a completion SLA is required and
-the user has authorized monitoring. Arm it when at least one registered Crew is
-running or a terminal revision is unread. Each heartbeat calls a zero-time,
-per-task cursor snapshot and does no report read when unchanged. On terminal or
-decision change, it wakes the Captain to read, validate, and ingest. When all
-monitored tasks are terminal and consumed, disable the heartbeat.
+If the Crew omitted a step, `Stop` creates one continuation prompt. A second
+unconfirmed attempt records `delivery_degraded_at` and permits the Crew to stop
+without looping forever; the pending durable event remains discoverable by the
+Captain's next full sweep. Never insert raw Crew reports into the Captain's user
+conversation.
 
-Do not confuse the heartbeat with a completion observer: it is bounded polling.
-The live acceptance discovered completion after 110.67 seconds on a nominal
-one-minute recurrence, so the current host does not support a strict 60-second
-claim. If no heartbeat is active, the adapter synchronizes sleeping-period
-results only on the next user or external wake and must not claim real-time
-reporting.
+## No scheduled heartbeat
+
+The Codex adapter does not create recurring heartbeat automations. Sleeping
+liveness uses the one-shot terminal notification. Turn-entry and Pre-final full
+sweeps remain the completeness mechanism and recover durable events when a
+notification is unavailable. In that degraded case, synchronization occurs on
+the next user or external wake and must not be described as real-time.
+
+The earlier one-minute heartbeat experiment is retained only as historical
+test evidence. It is not a current runtime feature.
 
 ## Safety and fallback
 
 If stable IDs, cursors, or bounded snapshots are unavailable, downgrade to
 Level 3 filesystem mailbox. If the filesystem store is unavailable, downgrade
-to Level 4 manual coordination. No hook is installed or enabled by this
-repository.
+to Level 4 manual coordination. Plugin Hooks remain disabled until the user
+reviews and trusts their exact definitions.
 
 ## Evidence
 
-- [OpenAI: Build skills](https://learn.chatgpt.com/docs/build-skills)
+- [OpenAI: Hooks](https://learn.chatgpt.com/docs/hooks)
+- [OpenAI: Package plugins](https://developers.openai.com/plugins/build/plugins)
 - Current Codex desktop tool inventory observed 2026-08-09; this is runtime
   evidence, not a public cross-surface API contract.

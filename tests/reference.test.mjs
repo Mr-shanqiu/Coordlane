@@ -8,15 +8,14 @@ import {
   archiveWorker,
   assertFinalizable,
   beginTurn,
+  bindCaptain,
   closeAssignment,
-  configureHeartbeat,
   createAssignment,
   createWorker,
   deliverNotification,
   dispatchAssignment,
   emitEvent,
   fullSweep,
-  heartbeatProbe,
   initProject,
   integrateChange,
   notificationPolicy,
@@ -27,6 +26,7 @@ import {
   readWorker,
   recordDelivery,
   recordExternalAssignment,
+  recordNotificationFailure,
   renameWorkerTitle,
   requestRevision,
   resumeRevision,
@@ -197,14 +197,16 @@ test("04 multi-target wait returns one, full sweep consumes both", () => {
   assert.deepEqual(new Set(swept.consumed.map((event) => event.worker_id)), new Set(["20", "30"]));
 });
 
-test("05 active Captain keeps a durable completion queued and quiet", () => {
+test("05 one-shot delivery records a receipt without copying report prose", () => {
   const root = makeRoot();
   addWorker(root);
   start(root, "20", "a05");
   const event = notify(root, persist(root, "20", "a05"));
-  const result = deliverNotification(root, event.event_id, "active");
-  assert.equal(result.delivered, false);
-  assert.equal(result.event.status, "pending");
+  const result = deliverNotification(root, event.event_id, { delivery_id: "delivery-a05" });
+  assert.equal(result.delivered, true);
+  assert.equal(result.event.status, "delivered");
+  assert.equal(result.event.delivery_id, "delivery-a05");
+  assert.equal(result.event.delivery_attempts, 1);
   assert.equal(result.event.user_interrupted, false);
 });
 
@@ -380,32 +382,30 @@ test("incident: unavailable scan marks freshness unknown and refuses final", () 
   assert.throws(() => assertFinalizable(root), /freshness=unknown/);
 });
 
-test("liveness: no broker honestly degrades to next-user-turn discovery", () => {
+test("liveness: a missing one-shot receipt remains recoverable at the next full sweep", () => {
   const root = makeRoot();
   addWorker(root);
-  start(root, "20", "sleeping-no-broker");
-  const probe = heartbeatProbe(root);
-  assert.equal(probe.status, "unavailable");
-  assert.equal(probe.liveness_mode, "next_turn_only");
-  assert.equal(probe.monitored_running_count, 1);
+  start(root, "20", "delivery-degraded");
+  const report = persist(root, "20", "delivery-degraded");
+  const event = notify(root, report);
+  const failure = recordNotificationFailure(root, event.event_id, {
+    error: "synthetic unavailable transport",
+    degraded: true
+  });
+  assert.equal(failure.degraded, true);
+  assert.equal(failure.event.status, "pending");
+  assert.ok(failure.event.delivery_degraded_at);
+  const swept = fullSweep(root);
+  assert.equal(swept.consumed.length, 1);
+  assert.equal(swept.consumed[0].event_id, event.event_id);
 });
 
-test("liveness: durable completion without numeric wake triggers heartbeat then auto-stops", () => {
+test("liveness: Captain binding uses stable IDs for the terminal notification gate", () => {
   const root = makeRoot();
   addWorker(root);
-  configureHeartbeat(root, { broker: "codex_heartbeat", sla_seconds: 60 });
-  start(root, "20", "sleeping-with-heartbeat");
-  assert.equal(heartbeatProbe(root).status, "armed");
-  persist(root, "20", "sleeping-with-heartbeat");
-  const probe = heartbeatProbe(root);
-  assert.equal(probe.wake_required, true);
-  assert.equal(probe.wake_reason, "unread_terminal");
-  assert.equal(probe.unread_terminal_count, 1);
-  const ingested = preFinalGate(root);
-  assert.equal(ingested.recovered.length, 1);
-  assert.equal(ingested.consumed.length, 1);
-  assert.equal(ingested.heartbeat.status, "stopped");
-  assert.equal(heartbeatProbe(root).wake_required, false);
+  const project = bindCaptain(root, { thread_id: "captain-thread", host_id: "host-local" });
+  assert.equal(project.captain_thread_id, "captain-thread");
+  assert.equal(project.captain_host_id, "host-local");
 });
 
 let failures = 0;
@@ -425,4 +425,4 @@ try {
 }
 
 if (failures > 0) process.exitCode = 1;
-else console.log("Passed 15 original failures plus release, active-turn finalization, and sleeping-controller liveness gates.");
+else console.log("Passed 15 original failures plus release, active-turn finalization, and hook-gated notification recovery.");

@@ -7,10 +7,10 @@ A terminal report is identified by `worker_id`, `assignment_id`, `attempt_id`,
 [`report.schema.json`](../schemas/report.schema.json). `completed`, `blocked`,
 `decision_needed`, and `failed` describe only the assigned scope.
 
-The producer order is report building, atomic durable write, digest, event, and
-optional transport hint. A running commentary cannot emit a terminal event.
-The strongest transport is a platform completion observer or reviewed post-turn
-hook. Without one, numeric Radio is only an opportunistic hint.
+The producer order is report building, atomic durable write, digest, event,
+one-shot transport hint, and delivery receipt. A running commentary cannot emit
+a terminal event. The plugin `Stop` Hook enforces the boundary; numeric Radio
+remains only an opportunistic hint.
 
 ## Full-sweep completeness gate
 
@@ -48,17 +48,11 @@ is unavailable or fails, set `freshness=unknown`; never claim synchronization.
 
 ## Sleeping-controller liveness
 
-Turn-entry and Pre-final cover only the interval in which a Captain turn is
-active. After final, liveness requires an actual background heartbeat or event
-broker. A worker prompt and pure numeric message cannot guarantee it.
-
-Arm liveness only while a monitored Assignment is running or a terminal
-revision is unread. The probe compares lightweight task status and cursors;
-terminal, blocked, failed, or decision events wake the Captain for full ingest.
-The durable event ledger retains completion even if notification delivery
-fails. When no monitored work remains and unread count is zero, disarm the
-heartbeat. If no broker exists, record `next_turn_only`: synchronization waits
-for the next user or external wake and is not real-time.
+Turn-entry and Pre-final cover the active Captain turn. Sleeping liveness uses
+the Crew's Hook-gated, one-shot terminal notification. The durable event ledger
+retains completion if delivery fails, and the next Captain turn recovers it.
+Coordlane does not run recurring heartbeat polling or claim real-time delivery
+after a degraded notification.
 
 ## Notification queue and Radio
 
@@ -68,9 +62,9 @@ point; P2 progress is query-only. Pending events remain durable while the
 Captain is active and do not repeatedly disturb the user.
 
 A message containing only a numeric Crew identifier may trigger an immediate
-global full sweep. It is not the discovery mechanism. Never require an
-impossible “send after final from the same turn.” Never retry, loop, poll, or
-schedule numeric notifications in the core protocol.
+global full sweep. It is not the discovery mechanism. Send it once before
+final, after durable event creation. Never retry, loop, poll, or schedule
+numeric notifications in the core protocol.
 
 ## Handoff and release
 

@@ -4,19 +4,19 @@
   "active_target": true,
   "last_verified": "2026-08-09",
   "capability_level": 2,
-  "completion_observer": "unverified",
+  "completion_observer": "reviewed_stop_hook_not_live_verified",
   "operations": {
     "create_worker": {"tool": "create_thread", "status": "available_with_user_authorization"},
     "dispatch_assignment": {"tool": "send_message_to_thread", "status": "available_delivery_only"},
     "read_worker": {"tool": "read_thread", "status": "available"},
     "wait_worker": {"tool": "wait_threads", "status": "available_first_change_only"},
     "persist_report": {"tool": "task_final_or_filesystem_store", "status": "available_with_adapter_rule"},
-    "emit_event": {"tool": "send_message_to_thread", "status": "opportunistic_only"},
+    "emit_event": {"tool": "durable_event_store", "status": "required_before_stop"},
+    "deliver_notification": {"tool": "send_message_to_thread", "status": "one_shot_stop_gated"},
+    "enforce_terminal_gate": {"tool": "Stop_hook", "status": "implemented_requires_trust"},
+    "record_delivery_receipt": {"tool": "PostToolUse_hook", "status": "implemented_live_verification_pending"},
     "scan_events": {"tool": "wait_threads", "status": "available_per_target_with_cursor"},
     "ack_event": {"tool": "coordlane_ledger", "status": "reference_implementation"},
-    "arm_liveness": {"tool": "automation_update", "status": "available_opt_in_heartbeat"},
-    "probe_liveness": {"tool": "wait_threads", "status": "available_lightweight_snapshot"},
-    "disarm_liveness": {"tool": "automation_update", "status": "available"},
     "archive_worker": {"tool": "set_thread_archived", "status": "available"},
     "workspace_status": {"tool": "git_read_only", "status": "available"},
     "integrate_change": {"tool": "captain_controlled_git", "status": "manual_authority_gate"}
@@ -27,7 +27,9 @@
     "send_equals_ack": false,
     "multi_target_wait_is_full_sweep": false,
     "raw_report_in_user_chat": false,
-    "numeric_wake_is_truth": false
+    "numeric_wake_is_truth": false,
+    "scheduled_heartbeat_enabled": false,
+    "standalone_skill_install": false
   },
   "fallback": ["level_3_filesystem_mailbox", "level_4_manual"]
 }
