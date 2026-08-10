@@ -41,6 +41,10 @@ assert.equal(manifest.invariants.numeric_wake_is_truth, false);
 assert.equal(manifest.invariants.scheduled_heartbeat_enabled, false);
 assert.equal(manifest.invariants.idle_registry_snapshot_calls, 0);
 assert.equal(manifest.invariants.snapshot_call_limit_enforced, true);
+assert.equal(manifest.invariants.captain_non_blocking_control_plane, true);
+assert.equal(manifest.invariants.captain_direct_project_work, false);
+assert.equal(manifest.invariants.captain_general_shell, false);
+assert.equal(manifest.invariants.validator_and_dock_are_crew, true);
 assert.equal(manifest.invariants.shared_worktree_state, "git_common_directory");
 assert.equal(manifest.invariants.standalone_skill_install, false);
 
@@ -57,6 +61,9 @@ for (const term of [
   "full sweep",
   "`Stop` Hook",
   "PostToolUse",
+  "Captain availability invariant",
+  "non-blocking control plane",
+  "Dock Assignment",
   "final_gate_passed",
   "freshness=unknown",
   "No scheduled heartbeat",

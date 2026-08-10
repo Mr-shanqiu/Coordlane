@@ -2,7 +2,7 @@
 
 ## Dock: integration readiness
 
-Before integration, the Captain confirms:
+Before integration, the Captain reviews evidence and confirms:
 
 1. all required upstream Workstreams are terminal and Captain-validated;
 2. worker claims are `release_pending`, with no-more-edits and complete release evidence;
@@ -15,9 +15,12 @@ Before integration, the Captain confirms:
 After integration, record the worker source commit and integrated commit,
 re-run combined checks, then close the Assignment and release its ownership.
 
-Passing Dock authorizes preparation of an integration. It does not authorize a
-merge, push, migration, deployment, or public release unless that action is
-separately within the user's granted authority.
+Passing Dock authorizes the Captain to issue one identity-bound integration
+Assignment to a single-writer Dock Crew. The Captain does not execute the
+integration. The Assignment binds the decision ID, exact source commit, target
+branch, permitted strategy, forbidden operations, and stop conditions. It does
+not authorize a push, migration, deployment, or public release unless that
+action is separately within the user's granted authority.
 
 ## Launch: external action
 

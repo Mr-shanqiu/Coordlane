@@ -29,12 +29,27 @@ current-host evidence and must be rechecked after host changes.
 | `ack_event` | Captain consumption ledger | Only after digest/identity verification and report consumption |
 | `archive_worker` | `set_thread_archived` after assignment close and event drain | Never archive active work |
 | `workspace_status` | local Git read-only checks in the registered workspace/worktree | Recheck HEAD and dirty state |
-| `integrate_change` | Captain-controlled Git operation | Never automatic; enforce branch policy and validation |
+| `integrate_change` | Dock Crew Git operation after identity-bound Captain authorization | Captain records the validated result; never automatic |
 
 State-changing operations use the bundled `bin/coordlane.mjs` operator. Its
 verified dispatch reads Git cleanliness and branch itself; its acknowledgement
 command evaluates a supplied current task snapshot; and its terminal command
 persists the report plus event in one locked producer operation.
+
+## Captain availability invariant
+
+The bound Captain task is a non-blocking control plane. `PreToolUse` denies
+direct file edits, interactive terminal writes, and general `Bash` or
+`exec_command` use even after Turn-entry passes. It allowlists task coordination
+and one shell-control-free invocation of `bin/coordlane.mjs`. The operator may
+record reviewed validation and integration evidence, but the Captain cannot run
+the underlying tests or Git integration.
+
+Implementation, evidence-producing validation, and integration execution run
+in bounded Crew tasks. A Dock Assignment must identify the Captain decision,
+exact source commit, target branch, allowed strategy, forbidden operations, and
+stop conditions. The Captain dispatches and yields instead of waiting for a
+worker inside the user turn.
 
 ## Registry
 
@@ -97,9 +112,10 @@ persists their new cursors. An echoed task ID or error prose is not coverage. Bo
 and pre-final coverage are required; draining only local mailbox files cannot
 pass the finalizer. A per-turn call limit prevents polling loops.
 
-The `PreToolUse` Hook blocks common write, dispatch, and integration paths until
-entry coverage exists. A covered mutation after an early Pre-final invalidates
-that phase so it cannot be reused at finalization.
+The `PreToolUse` Hook first enforces the Captain availability allowlist, then
+requires entry coverage for permitted control-plane actions. A covered operator
+mutation after an early Pre-final invalidates that phase so it cannot be reused
+at finalization.
 
 At user-turn entry, invalidate `final_gate_passed`. Immediately before final,
 run the registry-wide sweep even for an unrelated question. A wrapper or host

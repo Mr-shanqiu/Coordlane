@@ -83,9 +83,9 @@ if (!skill.startsWith("---\nname: coordlane\ndescription: ")) {
 if (/\bTODO\b|\[TODO/i.test(skill)) throw new Error("Skill contains unresolved TODO placeholders");
 
 const coordinationRequirements = new Map([
-  ["skills/coordlane/SKILL.md", ["assignment_id", "acknowledgement", "turn-entry", "pre-final", "cursor", "durable", "full sweep", "ownership", "final_gate_passed", "freshness=unknown"]],
+  ["skills/coordlane/SKILL.md", ["assignment_id", "acknowledgement", "turn-entry", "pre-final", "cursor", "durable", "full sweep", "ownership", "final_gate_passed", "freshness=unknown", "non-blocking control plane", "Validator Crew", "Dock Crew"]],
   ["core/handoff.md", ["Turn-entry", "Pre-final", "durable", "report_revision", "idempotency", "numeric", "unread_terminal_count"]],
-  ["templates/captain-prompt.md", ["assignment_id", "turn-entry", "pre-final", "full sweep", "raw report", "last_sweep_at"]]
+  ["templates/captain-prompt.md", ["assignment_id", "turn-entry", "pre-final", "full sweep", "raw report", "last_sweep_at", "non-blocking control plane", "Dock Crew"]]
 ]);
 for (const [relativePath, requiredTerms] of coordinationRequirements) {
   const fileContent = fs.readFileSync(path.join(root, relativePath), "utf8").toLowerCase();

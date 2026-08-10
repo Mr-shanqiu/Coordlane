@@ -9,6 +9,10 @@ Coordlane 是一个本地优先的 Codex 插件，用一个 Captain 主控
 报告证据、独立复验和合流状态显式记录，同时避免把执行任务的原始输出塞进
 用户主对话。
 
+Captain 是保持响应的非阻塞控制面：负责沟通、协调、审阅证据和授权状态转换，
+但不修改项目文件、不运行构建或测试、不等待 Crew，也不执行合流和发布操作。
+这些生产工作由 Validator 和 Dock Crew 在明确 Assignment 下完成。
+
 当前阶段**只适配 Codex desktop**。其他平台目录只是延期研究资料，不代表
 已经支持。
 
@@ -25,18 +29,21 @@ Coordlane 是一个本地优先的 Codex 插件，用一个 Captain 主控
   快照并保存每个 Crew cursor；错误文本或回显 ID 不能伪装成扫描证据。
 - 定向 `PreToolUse` 门禁会在 Turn-entry 完成前阻止常见写入路径，并在后续
   写操作发生时让过早完成的 Pre-final 失效。
+- 同一门禁会永久拒绝 Captain 直接修改项目、交互式写终端和执行普通 shell
+  命令；只允许协调工具和不含 shell 控制符的 Coordlane operator 调用。
 - 内置本地 operator 会自行取得 Git 派发证据，并一次生成 durable report/event，
   不要求 AI 临时编写状态脚本。
 - 可执行 finalizer 会拒绝缺少本回合全 registry 扫描、freshness 未知或仍有
   未读终态结果的 final 输出。
-- Crew 自报测试与 Captain 独立复验分开。
+- Crew 自报测试与 Validator 产出、Captain 审阅的独立证据分开。
 - 显式选择临时 cherry-pick 或长期 merge 分支策略，禁止混用。
 - 记录来源提交与合流提交；“完成”不等于释放、上线或整个 Mission 完成。
 
 ## 架构
 
-**Captain** 是面向用户的统一大脑，**Crew** 是受控执行任务；**Chart** 记录
-工作流和依赖，**Logbook** 保存结构化证据，**Dock** 表示受控合流，
+**Captain** 是面向用户的非阻塞统一大脑，**Crew** 是受控执行任务；
+**Validator** 产出独立验证证据，单写者 **Dock Crew** 执行经授权的合流；
+**Chart** 记录工作流和依赖，**Logbook** 保存结构化证据，**Dock** 表示受控合流，
 **Launch** 表示经过明确授权的迁移、部署或发布。**Radio** 只是可选的传输
 提示，不是核心。
 

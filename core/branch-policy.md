@@ -8,7 +8,8 @@ Use for short, disposable tasks:
 
 - create a fresh branch or worktree from current Captain HEAD;
 - commit the bounded result;
-- Captain validates and cherry-picks it;
+- a Validator produces independent evidence, the Captain authorizes, and a
+  single-writer Dock Crew cherry-picks it;
 - record source commit and integrated commit; and
 - close and archive or rebuild the worker branch.
 
@@ -18,7 +19,8 @@ Do not continue treating the old worker branch as fast-forward compatible.
 
 Use for a long-lived workstream:
 
-- Captain merges the worker branch, preserving ancestry;
+- after Captain authorization, a single-writer Dock Crew merges the worker
+  branch, preserving ancestry;
 - when Captain advances, update the worker through a controlled merge from the
   integration branch; and
 - never cherry-pick its commits and then demand later `ff-only` updates.

@@ -11,6 +11,28 @@ Use the shared state under the repository Git common directory so every
 worktree resolves the same store. Use `COORDLANE_STATE_DIR` only for an explicit
 alternate path; an explicitly configured missing store must fail closed.
 
+## Preserve Captain availability
+
+The Captain is a non-blocking control plane. It communicates with the user,
+maintains coordination state, takes zero-time snapshots, dispatches bounded
+Assignments, reviews structured evidence, and authorizes state transitions. It
+must not edit project files, run general shell work, build, test, install,
+serve, migrate, deploy, publish, block on a worker, or perform any operation
+with uncertain duration. Do not wait for Crew inside the user turn; dispatch,
+record the state, and yield.
+
+Delegate implementation and evidence-producing validation to Crew. Use a
+bounded Validator Crew for heavy or independent checks and a single-writer Dock
+Crew for integration execution. The Captain retains decision authority: it
+accepts or rejects evidence, issues an identity-bound Dock authorization, and
+records the result through the local operator. A control-plane state mutation
+is not permission to execute the underlying project action.
+
+The reviewed `PreToolUse` Hook enforces a default-deny tool policy in the bound
+Captain task. It permits task coordination and a single, shell-control-free
+invocation of `bin/coordlane.mjs`; it blocks direct file edits, interactive
+terminal writes, and general shell commands even after Turn-entry passes.
+
 ## Run the Captain loop
 
 1. **Turn-entry full sweep.** Before handling each user message, take a
@@ -24,9 +46,10 @@ alternate path; an explicitly configured missing store must fail closed.
    A snapshot counts only when its structured result contains that exact task,
    a boolean `changed` value, and a new cursor matching the registered old
    cursor. Mere appearance of a task ID in prose or an error is not evidence.
-2. **Audit.** Confirm repository, workspace, branch, HEAD, dirty state,
-   instructions, authoritative truth, active ownership, dependencies, runtime
-   switches and external side effects.
+2. **Audit.** Use bounded control-plane evidence to confirm repository,
+   workspace, branch, HEAD, dirty state, instructions, authoritative truth,
+   active ownership, dependencies, runtime switches and external side effects.
+   Delegate broad repository inspection rather than occupying the Captain.
 3. **Plan the Chart.** Define Mission acceptance, Workstreams, dependencies,
    gates, shared entry points, stop conditions, and single-writer ownership.
 4. **Register stable identity.** Store `role_id`, `worker_id`, `thread_id`,
@@ -54,14 +77,18 @@ alternate path; an explicitly configured missing store must fail closed.
    creation are one locked producer action. It rejects files outside ownership,
    forbidden/shared paths, mismatched workspace/branch/HEAD, and unauthorized
    external side effects.
-9. **Validate independently.** Inspect scope and diff, reproduce proportional
-   checks against the reported HEAD, review overlap, secrets, runtime state,
-   and side effects, then accept, request revision, or reject. Worker-reported
-   passing tests are not Captain-verified tests.
-10. **Dock and release.** Integrate only after validation. Use either
-    `ephemeral-cherry-pick` or `persistent-merge`; record source and integrated
-    commits. Never auto-reset, rebase, force, merge, deploy, migrate, publish,
-    or switch runtime state. Release ownership only with complete evidence.
+9. **Validate independently.** Assign evidence-producing checks to a bounded
+   Validator Crew. Review its subject HEAD, scope, diff findings, proportional
+   test results, overlap, secrets, runtime state, and side effects, then accept,
+   request revision, or reject. Worker-reported passing tests are not
+   independently validated evidence, and the Captain does not run the checks.
+10. **Dock and release.** Authorize a single-writer Dock Crew only after
+    validation. Bind the authorization to a decision ID, exact source commit,
+    target branch, permitted `cherry-pick` or `merge` strategy, forbidden
+    operations, and stop conditions. After the Dock report is validated,
+    record source and integrated commits. Never auto-reset, rebase, force,
+    merge, deploy, migrate, publish, or switch runtime state. Release ownership
+    only with complete evidence.
 11. **Pre-final full sweep.** After completing the core answer and before the
     final response, invoke the executable finalization gate even when the user
     question is unrelated to Crew work. The gate must scan the full monitored
@@ -75,10 +102,10 @@ active `turn_id`. A local mailbox sweep cannot by itself set
 `final_gate_passed`. Respect the per-turn snapshot-call limit; if it is reached,
 mark freshness unknown instead of spending more quota.
 
-The bundled `PreToolUse` Hook blocks common write, dispatch, and integration
-tools until Turn-entry has real task coverage. Any such tool used after an early
-Pre-final snapshot invalidates that snapshot, so another bounded Pre-final
-snapshot is required.
+The bundled `PreToolUse` Hook permanently blocks Captain project-work tools and
+general shell commands. Allowlisted coordination/operator use still requires
+real Turn-entry coverage and invalidates an early Pre-final snapshot, so another
+bounded Pre-final snapshot is required.
 
 ## Use the local operator
 
@@ -88,7 +115,9 @@ run `node <plugin-root>/bin/coordlane.mjs`. The supported commands are
 `acknowledge`, `start`, `terminal`, `sweep`, `validate`, `integrate`, `close`,
 `archive`, and `status`. Each command takes the state directory and an optional
 JSON file or `-` for JSON stdin. Do not use ad-hoc `node -e` imports to mutate
-the store.
+the store. `terminal` is a Crew producer operation and is not permitted from a
+bound Captain task. `validate` and `integrate` record reviewed Crew evidence;
+they do not authorize the Captain to execute tests or Git integration.
 
 Begin every user turn by invalidating the prior final gate. Refuse finalization
 when monitored workers or unread terminal events exist and the current turn has

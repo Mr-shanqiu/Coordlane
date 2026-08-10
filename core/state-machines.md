@@ -15,7 +15,8 @@ revision_requested -> running | superseded
 ```
 
 `delivered` is not `acknowledged`. `completed` applies only to the assigned
-scope. `validated` means Captain checks passed. `integrated` must record both
+scope. `validated` means independent evidence passed Captain review.
+`integrated` must record both
 the worker source commit and integrated commit. `closed` requires ownership
 release evidence.
 
@@ -26,9 +27,9 @@ Illegal transitions include:
 - a commentary or in-progress turn producing a terminal event;
 - running when ownership, dependency, or runtime preflight failed;
 - terminal state without a durable report revision;
-- integration before Captain validation; and
+- integration execution before Captain authorization and Validator evidence;
 - release before commit disposition, workspace, verification, overlap,
-  no-more-edits, runtime, and Captain checks all pass.
+  no-more-edits, runtime, and Captain-reviewed evidence all pass.
 
 ## Report
 

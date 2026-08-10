@@ -1,6 +1,6 @@
 # Implementation self-audit
 
-Last audited: 2026-08-10
+Last audited: 2026-08-11
 
 ## Runnable now
 
@@ -21,6 +21,10 @@ Last audited: 2026-08-10
   `Stop` terminal gate, strict structured cursor-bound
   `PostToolUse(wait_threads)` attestations, strict delivery receipts, bounded
   degraded-delivery fallback, and Hook regression tests.
+- A Captain availability allowlist that blocks direct edits, interactive
+  terminal writes, and general shell commands in the bound Captain task while
+  permitting task coordination and exact local operator state transitions.
+  Validator and Dock execution remain bounded Crew responsibilities.
 - Shared Git-common-directory state for linked worktrees, mode-0700 directories,
   bounded cross-process mutation locking, and interrupted-write recovery.
 - Assignment and Workstream contracts contain no mandatory task token, CPU,
@@ -62,6 +66,9 @@ Last audited: 2026-08-10
   against a hostile process with that user's permissions.
 - No automatic Git cherry-pick/merge, migration, deployment, release, runtime
   switch, or external call is performed.
+- The Hook can deny known project-execution tool paths, but it is not a general
+  operating-system security boundary. Newly introduced host tool names require
+  an adapter and matcher update before they are claimed as covered.
 
 ## Evidence boundary
 

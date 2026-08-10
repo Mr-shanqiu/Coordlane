@@ -866,7 +866,61 @@ export const captainEntryGate = (root, turnId) => {
   };
 };
 
+const CAPTAIN_COORDINATION_TOOLS = new Set([
+  "create_thread",
+  "send_message_to_thread",
+  "set_thread_archived"
+]);
+
+const CAPTAIN_DIRECT_WORK_TOOLS = new Set([
+  "apply_patch",
+  "write_stdin"
+]);
+
+const COORDLANE_OPERATOR_COMMANDS = new Set([
+  "create-worker",
+  "create-assignment",
+  "dispatch",
+  "record-delivery",
+  "acknowledge",
+  "start",
+  "sweep",
+  "validate",
+  "integrate",
+  "close",
+  "archive",
+  "status"
+]);
+
+const isCoordlaneOperatorCommand = (toolInput = {}) => {
+  const command = toolInput.command ?? toolInput.cmd;
+  if (typeof command !== "string" || command.length === 0) return false;
+  if (/(?:&&|\|\||[;&|`()<>\r\n]|\$\()/.test(command)) return false;
+  const match = command.match(
+    /^\s*(?:"[^"]*node(?:\.exe)?"|'[^']*node(?:\.exe)?'|\S*node(?:\.exe)?)\s+(?:"[^"]*\/bin\/coordlane\.mjs"|'[^']*\/bin\/coordlane\.mjs'|\S*\/bin\/coordlane\.mjs)\s+([a-z-]+)\b/
+  );
+  return Boolean(match && COORDLANE_OPERATOR_COMMANDS.has(match[1]));
+};
+
+export const captainAvailabilityPolicy = (input = {}) => {
+  const toolName = input.tool_name;
+  if (CAPTAIN_COORDINATION_TOOLS.has(toolName)) {
+    return { allowed: true, category: "coordination" };
+  }
+  if (CAPTAIN_DIRECT_WORK_TOOLS.has(toolName)) {
+    return { allowed: false, reason: "captain_direct_project_work_forbidden" };
+  }
+  if (["Bash", "exec_command"].includes(toolName)) {
+    return isCoordlaneOperatorCommand(input.tool_input)
+      ? { allowed: true, category: "control_plane_operator" }
+      : { allowed: false, reason: "captain_shell_work_forbidden" };
+  }
+  return { allowed: false, reason: "captain_tool_not_allowlisted" };
+};
+
 export const recordCaptainToolUse = (root, input) => withStoreLock(root, () => {
+  const availability = captainAvailabilityPolicy(input);
+  if (!availability.allowed) return availability;
   const paths = requireStore(root);
   const ledger = readJson(paths.ledger);
   const gate = ledger.turn_gate;
@@ -882,7 +936,7 @@ export const recordCaptainToolUse = (root, input) => withStoreLock(root, () => {
     ledger.freshness = "stale";
     atomicWriteJson(paths.ledger, ledger);
   }
-  return { allowed: true };
+  return { allowed: true, category: availability.category };
 });
 
 export const recordSweepObservation = (root, input) => withStoreLock(root, () => {

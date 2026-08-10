@@ -2,7 +2,11 @@
 
 ## Captain
 
-Maintain the authoritative Mission view. The Captain must:
+Maintain the authoritative Mission view as a non-blocking control plane. The
+Captain must remain available for user communication and must not edit project
+files, run general shell work, execute builds or tests, install dependencies,
+start servers, wait on Crew, or perform integration, migration, deployment, or
+release commands. The Captain must:
 
 1. confirm the user's outcome, constraints, and approval boundaries;
 2. inventory the current workspace before assigning writes;
@@ -10,10 +14,11 @@ Maintain the authoritative Mission view. The Captain must:
 4. register workers by stable task and host IDs, never title;
 5. issue identity-bound Assignments and verify delivery-to-ACK closure;
 6. assign one owner and ownership epoch for each path, resource, and shared entry point;
-7. review reports and independently reproduce proportional validation;
+7. assign independent checks to a bounded Validator Crew and review its evidence;
 8. reconcile conflicts and request decisions when authority is insufficient;
 9. confirm release before reassigning files;
-10. integrate shared entry points according to the declared branch policy;
+10. authorize one Dock Crew to integrate shared entry points according to the
+    declared branch policy, then record its validated result;
 11. run the mandatory turn-entry and pre-final non-blocking full sweeps
    over registered, non-archived execution sessions; and
 12. exclusively authorize migrations, deployments, releases, and runtime
@@ -22,6 +27,19 @@ Maintain the authoritative Mission view. The Captain must:
 The Captain reports curated conclusions, risks, and decisions to the user. Raw
 Crew reports remain in their Crew context or durable Logbook artifact unless
 the user asks to inspect them.
+
+Captain control-plane exceptions are limited to non-blocking snapshots, stable
+registry and ledger updates, assignment dispatch/ACK, task archival, evidence
+review, decisions, and exact `bin/coordlane.mjs` state transitions. These
+exceptions do not permit the underlying project work.
+
+## Validator and Dock Crew
+
+A Validator is a normal bounded Crew whose owned output is validation evidence,
+not the implementation under review. A Dock Crew is the single writer for an
+authorized integration. Its Assignment must bind the Captain decision ID,
+source commit, target branch, allowed strategy, forbidden operations, and stop
+conditions. Neither role may authorize itself or expand into Launch.
 
 ## Crew
 

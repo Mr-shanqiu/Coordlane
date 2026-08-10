@@ -143,9 +143,17 @@ const handlePreToolUse = (root, input) => {
   if (!isCaptainSession(root, input.session_id)) return;
   const result = recordCaptainToolUse(root, {
     turn_id: input.turn_id,
-    tool_name: input.tool_name
+    tool_name: input.tool_name,
+    tool_input: input.tool_input ?? {}
   });
   if (!result.allowed) {
+    if (result.reason?.startsWith("captain_")) {
+      stopOutput({
+        decision: "block",
+        reason: "Coordlane Captain availability gate: the Captain is a non-blocking control plane and cannot execute project work or general shell commands. Delegate implementation, heavy validation, and integration execution to a bounded Crew."
+      });
+      return;
+    }
     stopOutput({
       decision: "block",
       reason: "Coordlane Turn-entry gate: complete one bounded registry-wide wait_threads(timeoutMs=0) sweep before mutating, dispatching, or integrating."

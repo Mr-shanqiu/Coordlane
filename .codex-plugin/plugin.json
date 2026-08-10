@@ -1,6 +1,6 @@
 {
   "name": "coordlane",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Coordinate Codex tasks with turn-bound live scans, shared worktree state, durable handoffs, ownership gates, and quiet Captain review.",
   "author": {
     "name": "Mr-shanqiu",

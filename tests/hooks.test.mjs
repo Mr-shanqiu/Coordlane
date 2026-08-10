@@ -201,7 +201,7 @@ try {
     tool_input: { command: "synthetic" }
   });
   assert.equal(entryBlocked.decision, "block");
-  assert.match(entryBlocked.reason, /Turn-entry gate/);
+  assert.match(entryBlocked.reason, /availability gate/);
 
   runHook(normal, {
     hook_event_name: "PostToolUse",
@@ -265,7 +265,55 @@ try {
     tool_name: "apply_patch",
     tool_input: { command: "synthetic" }
   });
-  assert.equal(mutationAfterEarlyPreFinal, null);
+  assert.equal(mutationAfterEarlyPreFinal.decision, "block");
+  assert.match(mutationAfterEarlyPreFinal.reason, /availability gate/);
+  assert.equal(preFinalGate(normal).final_gate_passed, true);
+  const shellBlocked = runHook(normal, {
+    hook_event_name: "PreToolUse",
+    session_id: "captain-thread",
+    turn_id: "captain-turn-1",
+    cwd: "/tmp/coordlane-fictional",
+    tool_name: "exec_command",
+    tool_input: { cmd: "npm test" }
+  });
+  assert.equal(shellBlocked.decision, "block");
+  assert.match(shellBlocked.reason, /availability gate/);
+  const terminalOperatorBlocked = runHook(normal, {
+    hook_event_name: "PreToolUse",
+    session_id: "captain-thread",
+    turn_id: "captain-turn-1",
+    cwd: "/tmp/coordlane-fictional",
+    tool_name: "exec_command",
+    tool_input: { cmd: "node /opt/coordlane/bin/coordlane.mjs terminal /tmp/state report.json" }
+  });
+  assert.equal(terminalOperatorBlocked.decision, "block");
+  const chainedOperatorBlocked = runHook(normal, {
+    hook_event_name: "PreToolUse",
+    session_id: "captain-thread",
+    turn_id: "captain-turn-1",
+    cwd: "/tmp/coordlane-fictional",
+    tool_name: "exec_command",
+    tool_input: { cmd: "node /opt/coordlane/bin/coordlane.mjs status /tmp/state && npm test" }
+  });
+  assert.equal(chainedOperatorBlocked.decision, "block");
+  const backgroundOperatorBlocked = runHook(normal, {
+    hook_event_name: "PreToolUse",
+    session_id: "captain-thread",
+    turn_id: "captain-turn-1",
+    cwd: "/tmp/coordlane-fictional",
+    tool_name: "exec_command",
+    tool_input: { cmd: "node /opt/coordlane/bin/coordlane.mjs status /tmp/state & npm test" }
+  });
+  assert.equal(backgroundOperatorBlocked.decision, "block");
+  const operatorAllowed = runHook(normal, {
+    hook_event_name: "PreToolUse",
+    session_id: "captain-thread",
+    turn_id: "captain-turn-1",
+    cwd: "/tmp/coordlane-fictional",
+    tool_name: "exec_command",
+    tool_input: { cmd: "node /opt/coordlane/bin/coordlane.mjs status /tmp/state" }
+  });
+  assert.equal(operatorAllowed, null);
   assert.equal(preFinalGate(normal).final_gate_passed, false);
   runHook(normal, {
     hook_event_name: "PostToolUse",

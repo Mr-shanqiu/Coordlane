@@ -91,11 +91,14 @@ delivery receipt. Hooks remain inactive until the user reviews and trusts them.
 
 ## Security and resource model
 
-Coordlane treats worker reports as untrusted claims until the Captain checks
-scope, diff, subject HEAD, relevant tests, secret disclosure, runtime state,
-and external side effects. It stores no transcript or secret and performs no
-automatic merge, deployment, migration, or release. Runtime authority and
-external-side-effect permission remain explicit assignment boundaries.
+Coordlane treats worker reports as untrusted claims until a bounded Validator
+Crew produces independent evidence and the Captain reviews scope, diff
+findings, subject HEAD, relevant test results, secret disclosure, runtime
+state, and external side effects. The Captain remains a non-blocking control
+plane and does not execute the checks. Coordlane stores no transcript or secret
+and performs no automatic merge, deployment, migration, or release. Runtime
+authority and external-side-effect permission remain explicit assignment
+boundaries.
 
 Task snapshot cost is bounded. No active assignment produces no snapshot calls.
 There is no scheduled polling, and the Hook refuses observations after the

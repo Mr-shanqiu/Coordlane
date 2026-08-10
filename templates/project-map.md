@@ -44,5 +44,5 @@ Finalization freshness:
 
 ## Integration ledger
 
-| Assignment | Policy | Worker source commit | Integrated commit | Captain checks | Release state |
-| --- | --- | --- | --- | --- | --- |
+| Assignment | Policy | Worker source commit | Integrated commit | Validator evidence | Captain decision | Release state |
+| --- | --- | --- | --- | --- | --- | --- |

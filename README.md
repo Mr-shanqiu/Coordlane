@@ -11,6 +11,12 @@ stable identity, dependencies, file ownership, report evidence, validation,
 and integration state explicit—without turning raw worker output into user
 conversation noise.
 
+The Captain is a responsive, non-blocking control plane. It communicates,
+coordinates, reviews evidence, and authorizes state transitions, but it does
+not edit project files, run builds or tests, wait on workers, or execute
+integration and release work. Validator and Dock Crew perform those bounded
+operations under explicit Assignments.
+
 The current implementation phase targets **Codex desktop only**. Other platform
 directories are deferred research notes, not support claims.
 
@@ -28,11 +34,14 @@ directories are deferred research notes, not support claims.
   persists each Crew cursor; echoed IDs or error prose cannot satisfy coverage.
 - A targeted `PreToolUse` gate blocks common mutating paths until Turn-entry is
   complete and invalidates an early Pre-final after later mutations.
+- The same gate permanently rejects direct project edits, interactive terminal
+  writes, and general shell commands from the Captain; only coordination and a
+  shell-control-free Coordlane operator invocation are allowlisted.
 - A bundled local operator derives Git preflight evidence and atomically
   produces terminal report/event state without ad-hoc agent scripts.
 - An executable finalizer refuses an answer when the current turn lacks a fresh
   registry-wide Pre-final sweep or terminal results remain unread.
-- Captain verification is separate from worker-reported tests.
+- Validator evidence reviewed by the Captain is separate from worker-reported tests.
 - Explicit branch policy prevents cherry-pick and persistent-workstream history
   from being mixed.
 - Integration records worker and integrated commits; completion never implies
@@ -40,9 +49,10 @@ directories are deferred research notes, not support claims.
 
 ## Architecture
 
-Coordlane uses a **Captain** as the user-facing coordinating brain and **Crew**
-as bounded execution tasks. The **Chart** tracks Workstreams and dependencies;
-the **Logbook** stores structured evidence; **Dock** is controlled integration;
+Coordlane uses a non-blocking **Captain** as the user-facing coordinating brain
+and **Crew** as bounded execution tasks. A **Validator** produces independent
+evidence and a single-writer **Dock Crew** executes authorized integration. The
+**Chart** tracks Workstreams and dependencies; the **Logbook** stores structured evidence; **Dock** is controlled integration;
 **Launch** is an explicitly authorized migration, deployment, or release.
 **Radio** is only an optional transport hint.
 
