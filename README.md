@@ -1,7 +1,8 @@
 # Coordlane
 
-> One coordinating brain for safe parallel work, quiet handoffs, and traceable
-> integration across AI tasks.
+> A quota-conscious reliability layer for coordinating existing Codex tasks:
+> one responsive Captain, bounded Crew, quiet durable handoffs, and traceable
+> integration.
 
 [简体中文](README.zh-CN.md)
 
@@ -19,6 +20,45 @@ operations under explicit Assignments.
 
 The current implementation phase targets **Codex desktop only**. Other platform
 directories are deferred research notes, not support claims.
+
+## Why Coordlane
+
+Coordlane is deliberately narrower than an agent IDE, autonomous swarm, or
+general software-development methodology. It coordinates Codex tasks that the
+user already has, while keeping the main task available for conversation and
+decision-making.
+
+Its core advantage is the combination of these reliability boundaries:
+
+- **A non-blocking Captain.** The user-facing task coordinates but never edits
+  project files, runs builds or tests, waits on workers, or performs integration.
+- **Identity-bound dispatch.** Stable task identity, `assignment_id`, origin,
+  and explicit ACK separate message delivery from acceptance of the right work.
+- **Safe parallelism before execution.** Exclusive ownership and dependency
+  preflight stop overlapping writes, stale baselines, and premature downstream
+  work before a Crew starts.
+- **Durable, quiet handoffs.** Revisioned reports and terminal events are bound
+  by digest before a one-shot Hook notification. Raw Crew output stays outside
+  the user conversation.
+- **Two active-turn completeness gates.** Registry-wide Turn-entry and Pre-final
+  zero-time sweeps recover changed Crew state even when a wake hint is missing;
+  the finalizer fails closed on stale or unknown freshness.
+- **Evidence before integration.** A separate Validator produces independent
+  evidence and one authorized Dock Crew is the only integration writer.
+- **Reliability without recurring quota spend.** Coordlane has no heartbeat,
+  daemon, retry polling, or background AI patrol. It uses bounded incremental
+  snapshots and leaves a failed notification durable for the next Captain turn.
+
+This is not a claim of overall superiority. Projects such as
+[Agent Orchestrator](https://github.com/Untrivial-ai/agent-orchestrator),
+[Gas Town](https://github.com/gastownhall/gastown),
+[Superpowers](https://github.com/obra/superpowers),
+[Ruflo](https://github.com/ruvnet/ruflo), and
+[Warren](https://github.com/jayminwest/warren) offer broader user interfaces,
+agent/runtime coverage, continuous operation, autonomous workflows, or complete
+development methods. Choose them when those capabilities matter more than a
+small Codex-native coordination safety layer. See the dated
+[prior-art review](docs/research/prior-art.md) for the comparison and limits.
 
 ## What it fixes
 

@@ -1,6 +1,7 @@
 # Coordlane
 
-> 用一个统一大脑统筹 AI 任务，实现安全并行、安静交接和可追溯合流。
+> 面向已有 Codex 任务、额度友好的可靠协调层：一个始终可响应的 Captain，多个
+> 边界受控的 Crew，安静而持久的交接，以及可追溯合流。
 
 [English](README.md)
 
@@ -15,6 +16,39 @@ Captain 是保持响应的非阻塞控制面：负责沟通、协调、审阅证
 
 当前阶段**只适配 Codex desktop**。其他平台目录只是延期研究资料，不代表
 已经支持。
+
+## 为什么选择 Coordlane
+
+Coordlane 有意保持比 Agent IDE、自治 Swarm 或通用软件开发方法更窄的边界。
+它协调用户已经拥有的 Codex 任务，同时让主任务始终可以用于沟通和决策。
+
+它的核心优势来自以下可靠性边界的组合：
+
+- **非阻塞 Captain。** 面向用户的主任务只负责协调，不修改项目文件、不运行
+  构建或测试、不等待 Crew，也不执行合流。
+- **身份绑定的派发。** 稳定任务身份、`assignment_id`、来源和明确 ACK，将
+  “消息已投递”与“正确任务已被接受”分开。
+- **执行前保证安全并行。** Crew 开始前先做独占所有权和依赖预检，阻止重叠
+  写入、陈旧基线和过早启动下游工作。
+- **持久且安静的交接。** revision 化的报告和终态事件先以 digest 绑定，再由
+  Hook 发出一次通知；Crew 原始输出不进入用户对话。
+- **两道 active-turn 完整性门禁。** 回合开始与回复前都对全 registry 做零等待
+  扫描；即使唤醒提示丢失，也能恢复发生变化的 Crew 状态，状态陈旧或未知时
+  finalizer 会失败关闭。
+- **先有证据，再合流。** 独立 Validator 产出复验证据，只有一个得到授权的
+  Dock Crew 可以写入合流结果。
+- **不靠持续消耗额度换可靠性。** Coordlane 没有心跳、daemon、重试轮询或后台
+  AI 巡逻，只使用有上限的增量快照；通知失败时让事件保持持久，等待 Captain
+  下个回合恢复。
+
+这不是“全面领先”的宣称。[Agent Orchestrator](https://github.com/Untrivial-ai/agent-orchestrator)、
+[Gas Town](https://github.com/gastownhall/gastown)、
+[Superpowers](https://github.com/obra/superpowers)、
+[Ruflo](https://github.com/ruvnet/ruflo) 和
+[Warren](https://github.com/jayminwest/warren) 在用户界面、Agent/运行时覆盖、
+持续运行、自治工作流或完整开发方法上提供了更广的能力。如果这些能力比一个
+小型 Codex 原生协调安全层更重要，应优先选择它们。具体比较与边界见带日期的
+[先行项目审阅](docs/research/prior-art.md)。
 
 ## 解决的问题
 
