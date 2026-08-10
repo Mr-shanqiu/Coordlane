@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 
 import {
+  activeSweepTargets,
   assertFinalizable,
   beginTurn,
   isCaptainSession,
   preFinalGate,
+  recordCaptainToolUse,
   recordNotificationFailure,
   recordSessionNotificationDelivery,
   recordSweepObservation,
@@ -30,32 +32,69 @@ const toolFailed = (response) => {
 };
 
 const deliveryId = (input) => {
-  const response = input.tool_response;
-  if (response && typeof response === "object") {
-    for (const candidate of [response, response.structuredContent, response.structured_content]) {
-      if (!candidate || typeof candidate !== "object") continue;
-      for (const key of ["delivery_id", "message_id", "turn_id", "id"]) {
-        if (typeof candidate[key] === "string" && candidate[key].length > 0) return candidate[key];
+  const visit = (value) => {
+    if (typeof value === "string") {
+      try {
+        return visit(JSON.parse(value));
+      } catch {
+        return undefined;
       }
     }
-  }
-  return undefined;
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const found = visit(item);
+        if (found) return found;
+      }
+      return undefined;
+    }
+    if (!value || typeof value !== "object") return undefined;
+    for (const key of ["delivery_id", "message_id"]) {
+      if (typeof value[key] === "string" && value[key].length > 0) return value[key];
+    }
+    for (const candidate of Object.values(value)) {
+      const found = visit(candidate);
+      if (found) return found;
+    }
+    return undefined;
+  };
+  return visit(input.tool_response);
 };
 
-const containsString = (value, expected) => {
+const parseJsonValue = (value) => {
   if (typeof value === "string") {
-    if (value === expected || value.includes(expected)) return true;
     try {
-      return containsString(JSON.parse(value), expected);
+      return parseJsonValue(JSON.parse(value));
     } catch {
-      return false;
+      return value;
     }
   }
-  if (Array.isArray(value)) return value.some((item) => containsString(item, expected));
+  if (Array.isArray(value)) return value.map(parseJsonValue);
   if (value && typeof value === "object") {
-    return Object.values(value).some((item) => containsString(item, expected));
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, parseJsonValue(item)]));
   }
-  return false;
+  return value;
+};
+
+const collectSnapshots = (value, snapshots = []) => {
+  const parsed = parseJsonValue(value);
+  if (Array.isArray(parsed)) {
+    for (const item of parsed) collectSnapshots(item, snapshots);
+    return snapshots;
+  }
+  if (!parsed || typeof parsed !== "object") return snapshots;
+  const threadId = parsed.threadId ?? parsed.thread_id;
+  const cursor = parsed.cursor ?? parsed.latestCursor ?? parsed.latest_cursor;
+  if (typeof threadId === "string" && typeof parsed.changed === "boolean" &&
+    cursor !== null && cursor !== undefined) {
+    snapshots.push({
+      thread_id: threadId,
+      host_id: parsed.hostId ?? parsed.host_id ?? null,
+      changed: parsed.changed,
+      cursor
+    });
+  }
+  for (const item of Object.values(parsed)) collectSnapshots(item, snapshots);
+  return snapshots;
 };
 
 const handleWaitThreads = (root, input) => {
@@ -63,13 +102,27 @@ const handleWaitThreads = (root, input) => {
   const toolInput = input.tool_input ?? {};
   const timeout = toolInput.timeoutMs ?? toolInput.timeout_ms;
   if (timeout !== 0 || !Array.isArray(toolInput.targets)) return;
-  const observed = toolFailed(input.tool_response) ? [] : toolInput.targets
-    .map((target) => ({
-      thread_id: target.threadId ?? target.thread_id,
-      host_id: target.hostId ?? target.host_id
-    }))
-    .filter((target) => target.thread_id && target.host_id &&
-      containsString(input.tool_response, target.thread_id));
+  const expected = new Map(activeSweepTargets(root).map((target) => [
+    `${target.host_id}/${target.thread_id}`,
+    target
+  ]));
+  const snapshots = toolFailed(input.tool_response) ? [] : collectSnapshots(input.tool_response);
+  const observed = toolInput.targets.flatMap((target) => {
+    const threadId = target.threadId ?? target.thread_id;
+    const hostId = target.hostId ?? target.host_id;
+    const afterCursor = target.afterCursor ?? target.after_cursor ?? null;
+    const registered = expected.get(`${hostId}/${threadId}`);
+    if (!registered || afterCursor !== (registered.after_cursor ?? null)) return [];
+    const snapshot = snapshots.find((candidate) => candidate.thread_id === threadId &&
+      (candidate.host_id === null || candidate.host_id === hostId));
+    if (!snapshot) return [];
+    return [{
+      thread_id: threadId,
+      host_id: hostId,
+      after_cursor: afterCursor,
+      cursor: snapshot.cursor
+    }];
+  });
   const result = recordSweepObservation(root, {
     turn_id: input.turn_id,
     timeout_ms: timeout,
@@ -82,6 +135,20 @@ const handleWaitThreads = (root, input) => {
   } else if (result.registry_changed) {
     stopOutput({
       systemMessage: "Coordlane registry changed during this turn. Restart the bounded entry/pre-final gate without polling."
+    });
+  }
+};
+
+const handlePreToolUse = (root, input) => {
+  if (!isCaptainSession(root, input.session_id)) return;
+  const result = recordCaptainToolUse(root, {
+    turn_id: input.turn_id,
+    tool_name: input.tool_name
+  });
+  if (!result.allowed) {
+    stopOutput({
+      decision: "block",
+      reason: "Coordlane Turn-entry gate: complete one bounded registry-wide wait_threads(timeoutMs=0) sweep before mutating, dispatching, or integrating."
     });
   }
 };
@@ -225,7 +292,8 @@ const main = async () => {
     return;
   }
   const root = resolution.root;
-  if (input.hook_event_name === "PostToolUse") handlePostToolUse(root, input);
+  if (input.hook_event_name === "PreToolUse") handlePreToolUse(root, input);
+  else if (input.hook_event_name === "PostToolUse") handlePostToolUse(root, input);
   else if (input.hook_event_name === "UserPromptSubmit" && isCaptainSession(root, input.session_id)) {
     beginTurn(root, { turn_id: input.turn_id });
   }

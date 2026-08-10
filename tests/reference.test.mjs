@@ -20,6 +20,7 @@ import {
   integrateChange,
   notificationPolicy,
   persistReport,
+  persistTerminalReport,
   preFinalGate,
   readAssignment,
   readReport,
@@ -30,6 +31,7 @@ import {
   recordSweepObservation,
   renameWorkerTitle,
   requestRevision,
+  resourcesOverlap,
   resumeRevision,
   startAssignment,
   validateReport,
@@ -119,7 +121,10 @@ const persist = (root, workerId, assignmentId, revision = 1, status = "completed
     attempt_id: assignment.attempt_id,
     ownership_epoch: assignment.ownership_epoch,
     report_revision: revision,
-    content: content(workerId, status, overrides)
+    content: content(workerId, status, {
+      modified_or_owned_files: [`src/${assignmentId}`],
+      ...overrides
+    })
   });
 };
 
@@ -360,11 +365,17 @@ test("incident: pre-final gate ingests four completions during an unrelated answ
     const report = persist(root, worker, `ordinary-${worker}`);
     notify(root, report);
   }
-  const observedWorkers = ["30", "35", "40", "50"].map((workerId) => {
-    const worker = readWorker(root, workerId);
-    return { worker_id: worker.worker_id, thread_id: worker.thread_id, host_id: worker.host_id };
-  });
   for (let index = 0; index < 2; index += 1) {
+    const observedWorkers = ["30", "35", "40", "50"].map((workerId) => {
+      const worker = readWorker(root, workerId);
+      return {
+        worker_id: worker.worker_id,
+        thread_id: worker.thread_id,
+        host_id: worker.host_id,
+        after_cursor: worker.status_cursor,
+        cursor: `cursor-${workerId}-${index}`
+      };
+    });
     recordSweepObservation(root, {
       turn_id: "turn-four-completions",
       timeout_ms: 0,
@@ -449,6 +460,78 @@ test("liveness: Captain binding uses stable IDs for the terminal notification ga
   const project = bindCaptain(root, { thread_id: "captain-thread", host_id: "host-local" });
   assert.equal(project.captain_thread_id, "captain-thread");
   assert.equal(project.captain_host_id, "host-local");
+});
+
+test("safety: terminal reports cannot claim unowned or forbidden changes", () => {
+  const unowned = makeRoot();
+  addWorker(unowned);
+  start(unowned, "20", "scope-unowned");
+  assert.throws(() => persist(unowned, "20", "scope-unowned", 1, "completed", {
+    modified_or_owned_files: ["src/outside.js"]
+  }), /outside assignment ownership/);
+
+  const forbidden = makeRoot();
+  addWorker(forbidden);
+  assert.throws(() => start(forbidden, "20", "scope-forbidden", {
+    owned_resources: ["src"],
+    forbidden_resources: ["src/shared-entry.js"]
+  }), /overlaps forbidden or shared resource/);
+});
+
+test("safety: terminal reports reject unauthorized side effects and wrong validation HEAD", () => {
+  const sideEffect = makeRoot();
+  addWorker(sideEffect);
+  start(sideEffect, "20", "side-effect");
+  assert.throws(() => persist(sideEffect, "20", "side-effect", 1, "completed", {
+    runtime_state: {
+      external_side_effects: ["publish synthetic artifact"],
+      running_processes: [],
+      switches: [],
+      cleanup: "No process started"
+    }
+  }), /not authorized/);
+
+  const wrongHead = makeRoot();
+  addWorker(wrongHead);
+  start(wrongHead, "20", "wrong-head");
+  assert.throws(() => persist(wrongHead, "20", "wrong-head", 1, "completed", {
+    worker_validation: [{
+      check: "targeted",
+      command: "node --test",
+      result: "passed",
+      evidence: "1 passed",
+      subject_head: "different-head"
+    }]
+  }), /reported workspace HEAD/);
+});
+
+test("safety: terminal producer writes the durable report and event in one operation", () => {
+  const root = makeRoot();
+  addWorker(root);
+  start(root, "20", "terminal-combined");
+  const assignment = readAssignment(root, "terminal-combined");
+  const result = persistTerminalReport(root, {
+    worker_id: "20",
+    assignment_id: "terminal-combined",
+    attempt_id: assignment.attempt_id,
+    ownership_epoch: assignment.ownership_epoch,
+    report_revision: 1,
+    priority: "P1",
+    content: content("20", "completed", {
+      modified_or_owned_files: ["src/terminal-combined"]
+    })
+  });
+  assert.equal(result.event.report_digest, result.report.report_digest);
+  assert.equal(fullSweep(root).consumed.length, 1);
+});
+
+test("safety: resource aliases cannot bypass ownership overlap", () => {
+  assert.equal(resourcesOverlap("src/feature", "src/feature/file.js"), true);
+  assert.equal(resourcesOverlap("resource:db/users", "resource:db/users/email"), true);
+  assert.throws(() => resourcesOverlap("../outside", "src"), /repository-relative/);
+  if (process.platform === "darwin") {
+    assert.equal(resourcesOverlap("src/Foo", "src/foo/bar.js"), true);
+  }
 });
 
 let failures = 0;

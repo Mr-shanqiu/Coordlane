@@ -24,8 +24,12 @@ directories are deferred research notes, not support claims.
 - Terminal reports are revisioned, digest-bound, and durable before events.
 - A reviewed `Stop` Hook requires terminal evidence and a one-shot Captain
   notification before a Crew can finish normally.
-- `PostToolUse(wait_threads)` records actual zero-time task snapshots for both
-  turn-entry and pre-final instead of trusting a local ledger claim alone.
+- `PostToolUse(wait_threads)` requires structured zero-time task snapshots and
+  persists each Crew cursor; echoed IDs or error prose cannot satisfy coverage.
+- A targeted `PreToolUse` gate blocks common mutating paths until Turn-entry is
+  complete and invalidates an early Pre-final after later mutations.
+- A bundled local operator derives Git preflight evidence and atomically
+  produces terminal report/event state without ad-hoc agent scripts.
 - An executable finalizer refuses an answer when the current turn lacks a fresh
   registry-wide Pre-final sweep or terminal results remain unread.
 - Captain verification is separate from worker-reported tests.
@@ -51,10 +55,11 @@ Read the [architecture](docs/architecture.md),
 ## Current runnable surface
 
 - one installable Codex plugin with a bundled [`coordlane` Skill](skills/coordlane/SKILL.md);
-- reviewed `Stop` and `PostToolUse` lifecycle [Hooks](hooks/hooks.json);
+- reviewed `PreToolUse`, `Stop`, and `PostToolUse` lifecycle [Hooks](hooks/hooks.json);
 - Captain, Crew, report, and project-map [`templates/`](templates/);
 - seven machine-readable [`schemas/`](schemas/);
 - a Node.js standard-library [filesystem reference](reference/README.md);
+- a supported local state operator at [`bin/coordlane.mjs`](bin/coordlane.mjs);
 - a current-host [Codex desktop adapter](adapters/codex/README.md); and
 - 15 executable failure scenarios plus adversarial worktree, receipt, identity,
   quota, and concurrent-writer regression checks.
@@ -105,6 +110,11 @@ node reference/coordlane.mjs bind-captain "$STATE_DIR" captain-thread local
 node reference/coordlane.mjs status "$STATE_DIR"
 ```
 
+Use `node bin/coordlane.mjs <command> "$STATE_DIR" <payload.json>` for
+registration, assignment, verified dispatch, acknowledgement, combined
+terminal report/event production, validation, integration recording, release,
+and status. See the [operator reference](reference/README.md).
+
 ## Codex reliability rules
 
 Current Codex desktop task tools provide stable IDs, listing, reading,
@@ -114,8 +124,9 @@ orchestration with reviewed lifecycle Hooks:
 1. dispatch with an `assignment_id`;
 2. verify target acknowledgement by reading the task;
 3. maintain one cursor per registered, non-archived Crew;
-4. let the Hook attest actual non-blocking `wait_threads` snapshots at turn entry
-   and pre-final; a local event sweep alone cannot pass the finalizer;
+4. let the Hook strictly parse actual non-blocking `wait_threads` snapshots at
+   turn entry and pre-final, matching each old cursor before persisting the new
+   one; a local event sweep alone cannot pass the finalizer;
 5. try one batch for cost control, then scan only targets absent from its result;
 6. consume only durable, matching report revisions; and
 7. require durable report/event before a one-shot pure numeric wake;

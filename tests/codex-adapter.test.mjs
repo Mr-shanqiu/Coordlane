@@ -29,6 +29,9 @@ assert.equal(manifest.operations.wait_worker.status, "available_first_change_onl
 assert.equal(manifest.operations.emit_event.status, "required_before_stop");
 assert.equal(manifest.operations.deliver_notification.status, "one_shot_stop_gated");
 assert.equal(manifest.operations.enforce_terminal_gate.status, "implemented_requires_trust");
+assert.equal(manifest.operations.persist_report.status, "implemented_combined_report_event");
+assert.equal(manifest.invariants.snapshot_requires_structured_cursor, true);
+assert.equal(manifest.invariants.terminal_report_scope_checked, true);
 assert.deepEqual(manifest.invariants.stable_identity, ["thread_id", "host_id"]);
 assert.equal(manifest.invariants.title_is_routing_key, false);
 assert.equal(manifest.invariants.send_equals_ack, false);
@@ -68,6 +71,7 @@ assert.equal(plugin.skills, "./skills/");
 assert.equal(fs.existsSync("hooks/hooks.json"), true);
 const hooks = JSON.parse(fs.readFileSync("hooks/hooks.json", "utf8"));
 assert.ok(hooks.hooks.Stop);
+assert.ok(hooks.hooks.PreToolUse);
 assert.ok(hooks.hooks.PostToolUse);
 assert.match(hooks.hooks.PostToolUse[0].matcher, /wait_threads/);
 assert.ok(hooks.hooks.UserPromptSubmit);

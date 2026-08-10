@@ -14,6 +14,7 @@ import {
   persistReport,
   preFinalGate,
   recordDelivery,
+  readWorker,
   startAssignment,
   terminalGateSnapshot
 } from "../reference/coordlane.mjs";
@@ -152,6 +153,21 @@ try {
     session_id: "worker-thread",
     cwd: "/tmp/coordlane-fictional",
     tool_name: "send_message_to_thread",
+    tool_use_id: "tool-attempt-only",
+    tool_input: {
+      threadId: "captain-thread",
+      hostId: "host-local",
+      message: "20"
+    },
+    tool_response: { id: "generic-tool-call-id" }
+  });
+  assert.equal(terminalGateSnapshot(normal, "worker-thread").delivery_satisfied, false);
+
+  runHook(normal, {
+    hook_event_name: "PostToolUse",
+    session_id: "worker-thread",
+    cwd: "/tmp/coordlane-fictional",
+    tool_name: "send_message_to_thread",
     tool_use_id: "tool-delivery-1",
     tool_input: {
       threadId: "captain-thread",
@@ -176,6 +192,42 @@ try {
     turn_id: "captain-turn-1",
     cwd: "/tmp/coordlane-fictional"
   });
+  const entryBlocked = runHook(normal, {
+    hook_event_name: "PreToolUse",
+    session_id: "captain-thread",
+    turn_id: "captain-turn-1",
+    cwd: "/tmp/coordlane-fictional",
+    tool_name: "apply_patch",
+    tool_input: { command: "synthetic" }
+  });
+  assert.equal(entryBlocked.decision, "block");
+  assert.match(entryBlocked.reason, /Turn-entry gate/);
+
+  runHook(normal, {
+    hook_event_name: "PostToolUse",
+    session_id: "captain-thread",
+    turn_id: "captain-turn-1",
+    cwd: "/tmp/coordlane-fictional",
+    tool_name: "wait_threads",
+    tool_use_id: "wait-false-attestation",
+    tool_input: {
+      timeoutMs: 0,
+      targets: [{ threadId: "worker-thread", hostId: "host-local", afterCursor: null }]
+    },
+    tool_response: {
+      echo: { threadId: "worker-thread", hostId: "host-local", afterCursor: null },
+      error: "synthetic partial response"
+    }
+  });
+  const stillBlocked = runHook(normal, {
+    hook_event_name: "PreToolUse",
+    session_id: "captain-thread",
+    turn_id: "captain-turn-1",
+    cwd: "/tmp/coordlane-fictional",
+    tool_name: "Bash",
+    tool_input: { command: "git status" }
+  });
+  assert.equal(stillBlocked.decision, "block");
   const captainBlocked = runHook(normal, {
     hook_event_name: "Stop",
     session_id: "captain-thread",
@@ -184,6 +236,7 @@ try {
   });
   assert.equal(captainBlocked.decision, "block");
   assert.match(captainBlocked.reason, /Pre-final sweep/);
+  let afterCursor = null;
   for (let index = 0; index < 2; index += 1) {
     runHook(normal, {
       hook_event_name: "PostToolUse",
@@ -194,13 +247,41 @@ try {
       tool_use_id: `wait-${index}`,
       tool_input: {
         timeoutMs: 0,
-        targets: [{ threadId: "worker-thread", hostId: "host-local", afterCursor: null }]
+        targets: [{ threadId: "worker-thread", hostId: "host-local", afterCursor }]
       },
       tool_response: {
         snapshots: [{ threadId: "worker-thread", changed: false, cursor: `cursor-${index}` }]
       }
     });
+    afterCursor = `cursor-${index}`;
+    assert.equal(readWorker(normal, "20").status_cursor, afterCursor);
   }
+  assert.equal(preFinalGate(normal).final_gate_passed, true);
+  const mutationAfterEarlyPreFinal = runHook(normal, {
+    hook_event_name: "PreToolUse",
+    session_id: "captain-thread",
+    turn_id: "captain-turn-1",
+    cwd: "/tmp/coordlane-fictional",
+    tool_name: "apply_patch",
+    tool_input: { command: "synthetic" }
+  });
+  assert.equal(mutationAfterEarlyPreFinal, null);
+  assert.equal(preFinalGate(normal).final_gate_passed, false);
+  runHook(normal, {
+    hook_event_name: "PostToolUse",
+    session_id: "captain-thread",
+    turn_id: "captain-turn-1",
+    cwd: "/tmp/coordlane-fictional",
+    tool_name: "wait_threads",
+    tool_use_id: "wait-after-mutation",
+    tool_input: {
+      timeoutMs: 0,
+      targets: [{ threadId: "worker-thread", hostId: "host-local", afterCursor }]
+    },
+    tool_response: {
+      snapshots: [{ threadId: "worker-thread", changed: false, cursor: "cursor-final" }]
+    }
+  });
   assert.equal(preFinalGate(normal).final_gate_passed, true);
   const captainAllowed = runHook(normal, {
     hook_event_name: "Stop",

@@ -21,6 +21,9 @@ alternate path; an explicitly configured missing store must fail closed.
    If there is no active assignment, record an empty gate without calling task
    tools. Otherwise try one batched zero-time snapshot and individually query
    only targets absent from its result. Never reread unchanged full reports.
+   A snapshot counts only when its structured result contains that exact task,
+   a boolean `changed` value, and a new cursor matching the registered old
+   cursor. Mere appearance of a task ID in prose or an error is not evidence.
 2. **Audit.** Confirm repository, workspace, branch, HEAD, dirty state,
    instructions, authoritative truth, active ownership, dependencies, runtime
    switches and external side effects.
@@ -35,6 +38,8 @@ alternate path; an explicitly configured missing store must fail closed.
 6. **Preflight before dispatch.** Block writes on dirty or wrong workspace,
    overlap, unmet dependency, unsafe runtime, or unsettled truth. Unsettled
    truth permits only read-only audit or skeleton work.
+   Use the bundled local operator's verified `dispatch`; do not hand-enter Git,
+   dependency, or ownership booleans.
 7. **Close the dispatch transaction.** Treat message send as delivery only.
    Read the target and require acknowledgement: its latest user message
    contains the exact assignment ID, its assistant restates the bounded scope
@@ -45,6 +50,10 @@ alternate path; an explicitly configured missing store must fail closed.
    consume idempotently, advance cursor only after success, and acknowledge the
    event only after report consumption. Recover durable reports with lost
    events. Keep raw reports outside the user conversation.
+   Use the operator's `terminal` command so report persistence and event
+   creation are one locked producer action. It rejects files outside ownership,
+   forbidden/shared paths, mismatched workspace/branch/HEAD, and unauthorized
+   external side effects.
 9. **Validate independently.** Inspect scope and diff, reproduce proportional
    checks against the reported HEAD, review overlap, secrets, runtime state,
    and side effects, then accept, request revision, or reject. Worker-reported
@@ -65,6 +74,21 @@ The bundled `PostToolUse(wait_threads)` Hook must attest both sweeps for the
 active `turn_id`. A local mailbox sweep cannot by itself set
 `final_gate_passed`. Respect the per-turn snapshot-call limit; if it is reached,
 mark freshness unknown instead of spending more quota.
+
+The bundled `PreToolUse` Hook blocks common write, dispatch, and integration
+tools until Turn-entry has real task coverage. Any such tool used after an early
+Pre-final snapshot invalidates that snapshot, so another bounded Pre-final
+snapshot is required.
+
+## Use the local operator
+
+Resolve the plugin root as the directory two levels above this `SKILL.md`, then
+run `node <plugin-root>/bin/coordlane.mjs`. The supported commands are
+`create-worker`, `create-assignment`, `dispatch`, `record-delivery`,
+`acknowledge`, `start`, `terminal`, `sweep`, `validate`, `integrate`, `close`,
+`archive`, and `status`. Each command takes the state directory and an optional
+JSON file or `-` for JSON stdin. Do not use ad-hoc `node -e` imports to mutate
+the store.
 
 Begin every user turn by invalidating the prior final gate. Refuse finalization
 when monitored workers or unread terminal events exist and the current turn has

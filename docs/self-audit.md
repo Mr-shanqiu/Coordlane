@@ -8,20 +8,27 @@ Last audited: 2026-08-10
 - A Node.js filesystem reference implementing registry, assignments,
   acknowledgement, ownership, reports, events, cursors, full sweeps,
   validation, branch-policy checks, release, and recovery.
+- A supported local operator for registration, assignment lifecycle, Git-derived
+  dispatch preflight, snapshot-based ACK, combined terminal report/event
+  production, validation, integration recording, release, archive, and status.
 - Fifteen executable failure scenarios plus adversarial worktree, false-receipt,
   stable-identity, idle-quota, explicit-missing-store, and concurrent-writer
   regressions.
 - Executable `beginTurn`, `preFinalGate`, and `assertFinalizable` guards,
   including the four-simultaneous-completion incident and scan-unavailable
   regression.
-- A plugin manifest, bundled Skill, `Stop` terminal gate, turn-bound
-  `PostToolUse(wait_threads)` scan attestations, strict structured delivery
-  receipts, bounded degraded-delivery fallback, and Hook regression tests.
+- A plugin manifest, bundled Skill, targeted Turn-entry `PreToolUse` gate,
+  `Stop` terminal gate, strict structured cursor-bound
+  `PostToolUse(wait_threads)` attestations, strict delivery receipts, bounded
+  degraded-delivery fallback, and Hook regression tests.
 - Shared Git-common-directory state for linked worktrees, mode-0700 directories,
   bounded cross-process mutation locking, and interrupted-write recovery.
 - Assignment and Workstream contracts contain no mandatory task token, CPU,
   network, or external-call quotas. The only enforced call limit bounds
   Coordlane's own live-snapshot overhead.
+- Terminal persistence rejects unowned or prohibited files, mismatched registered
+  workspace/branch/HEAD, validation against another HEAD, and undeclared
+  external side effects. File ownership aliases are normalized conservatively.
 - Prompt templates and safe-point coordination rules.
 
 ## Codex live acceptance
@@ -38,8 +45,9 @@ Last audited: 2026-08-10
   the saved project entry.
 - Live reports used explicit placeholder digests; cryptographic durable-report
   persistence before final remains unverified.
-- The plugin Hook implementation is locally executable but has not yet passed
-  live Codex trust, `Stop`, `PostToolUse(wait_threads)`, or
+- The plugin Hook implementation is locally executable but its strict snapshot
+  parser has not yet passed live Codex trust, `PreToolUse`, `Stop`,
+  `PostToolUse(wait_threads)`, or
   `PostToolUse(send_message_to_thread)` acceptance.
 - The earlier heartbeat experiment took 110.67 seconds on a nominal one-minute
   recurrence. It is retained as historical evidence and removed from the
@@ -63,6 +71,12 @@ simulations. The projectless live acceptance evidence is recorded in
 Before a Codex release, repeat it with a corrected saved-project path and a
 disposable worktree, verify durable digests, then run live Hook trust, live
 snapshot-attestation, and terminal-delivery acceptance.
+
+The ACK operator validates supplied task-snapshot content but cannot prove that
+an arbitrary JSON file came directly from `read_thread`; live adapter acceptance
+must capture and bind the actual tool response. User-direct steering detection
+also remains a Captain read-before-dispatch responsibility rather than an
+automatic Crew `UserPromptSubmit` transition.
 
 The removed heartbeat experiment is recorded historically in
 [`testing/codex-sleeping-controller-acceptance-2026-08-09.md`](testing/codex-sleeping-controller-acceptance-2026-08-09.md).

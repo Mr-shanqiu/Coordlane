@@ -9,7 +9,7 @@
     "worker_id", "origin", "scope_version", "ownership_epoch", "attempt_id",
     "attempt_number", "objective", "acceptance_criteria", "owned_resources",
     "forbidden_resources", "shared_entrypoints", "dependencies", "branch_policy",
-    "execution_mode", "external_side_effects", "status", "delivery",
+    "execution_mode", "external_side_effects", "preflight", "status", "delivery",
     "acknowledgement", "worker_report_revision", "coordinator_disposition",
     "coordinator_checks", "integration", "created_at", "updated_at"
   ],
@@ -33,6 +33,19 @@
     "branch_policy": { "enum": ["ephemeral-cherry-pick", "persistent-merge"] },
     "execution_mode": { "enum": ["write", "read_only", "skeleton"] },
     "external_side_effects": { "$ref": "#/$defs/strings" },
+    "preflight": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["mode", "verified_at"],
+          "properties": {
+            "mode": { "enum": ["attested", "verified-local"] },
+            "verified_at": { "type": "string", "format": "date-time" }
+          }
+        }
+      ]
+    },
     "status": { "enum": ["draft", "dispatched", "delivered", "acknowledged", "running", "completed", "blocked", "decision_needed", "failed", "superseded", "validated", "integrated", "revision_requested", "rejected", "closed"] },
     "delivery": { "oneOf": [{ "$ref": "#/$defs/delivery" }, { "type": "null" }] },
     "acknowledgement": { "oneOf": [{ "$ref": "#/$defs/acknowledgement" }, { "type": "null" }] },

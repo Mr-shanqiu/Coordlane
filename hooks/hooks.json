@@ -13,6 +13,19 @@
         ]
       }
     ],
+    "PreToolUse": [
+      {
+        "matcher": "^(Bash|apply_patch|create_thread|send_message_to_thread|set_thread_archived|write_stdin)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$PLUGIN_ROOT/hooks/coordlane-hook.mjs\"",
+            "timeout": 5,
+            "statusMessage": "Checking Coordlane turn-entry gate"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "^(send_message_to_thread|wait_threads)$",

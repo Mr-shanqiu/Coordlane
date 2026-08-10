@@ -32,7 +32,9 @@ Before declaring a terminal state, run proportional checks, verify the reported
 HEAD, commit or explain no commit, record all modified or occupied files,
 runtime processes and cleanup, side effects, and secret exposure. Atomically
 persist the complete report as a new `report_revision`; only then emit its
-digest-bound event. Send the bound Captain exactly one pure `{worker_id}`
+digest-bound event. Use `node {plugin_root}/bin/coordlane.mjs terminal
+{state_store} {report_payload}` so persistence and event creation share one
+locked producer operation. Send the bound Captain exactly one pure `{worker_id}`
 message before final; do not include report prose. The plugin `PostToolUse`
 Hook records the matching receipt and the `Stop` Hook enforces the terminal
 gate. Never retry or schedule the notification. End with the human report in

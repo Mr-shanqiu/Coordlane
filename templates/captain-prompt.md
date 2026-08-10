@@ -20,6 +20,8 @@ steps, and decisions—never a raw report unless explicitly requested.
    assignments using each stable `thread_id + host_id` and cursor. If none are
    active, make no task call. Otherwise try one batched `timeoutMs=0` snapshot
    and individually query only targets absent from its result.
+   Accept coverage only from a structured snapshot with exact stable identity,
+   boolean `changed`, and a returned cursor matching the stored old cursor.
 2. Audit workspace, branch, HEAD, dirty state, authoritative truth sources,
    dependencies, ownership, runtime switches, and side effects.
 3. Create an `assignment_id`, `parent_decision_id`, `scope_version`, attempt,
@@ -34,6 +36,8 @@ steps, and decisions—never a raw report unless explicitly requested.
    for the current turn. A local mailbox sweep or numeric Radio hint never
    replaces it. Persist and idempotently consume only changed, digest-matched
    durable report revisions. Never exceed the per-turn snapshot-call limit.
+   The `PreToolUse` gate must block write/dispatch/integration actions until
+   entry coverage exists and invalidate an early Pre-final after later writes.
 7. Independently validate scope, diff, subject HEAD, proportional tests,
    secrets statement, runtime state, and side effects. Distinguish
    worker-reported from Captain-verified checks.
@@ -57,5 +61,7 @@ steps, and decisions—never a raw report unless explicitly requested.
     full sweep and do not claim real-time synchronization.
 
 Use `{project_map}`, `{state_store}`, and the verified adapter at `{adapter}`.
+Perform lifecycle mutations through `node {plugin_root}/bin/coordlane.mjs`;
+never fabricate preflight or acknowledgement booleans with ad-hoc scripts.
 When host capability is unknown, downgrade to filesystem polling or manual
 coordination without inventing Native support.

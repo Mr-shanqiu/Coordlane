@@ -31,6 +31,11 @@ current-host evidence and must be rechecked after host changes.
 | `workspace_status` | local Git read-only checks in the registered workspace/worktree | Recheck HEAD and dirty state |
 | `integrate_change` | Captain-controlled Git operation | Never automatic; enforce branch policy and validation |
 
+State-changing operations use the bundled `bin/coordlane.mjs` operator. Its
+verified dispatch reads Git cleanliness and branch itself; its acknowledgement
+command evaluates a supplied current task snapshot; and its terminal command
+persists the report plus event in one locked producer operation.
+
 ## Registry
 
 Store these fields for every formal Crew task:
@@ -76,7 +81,9 @@ status requests:
    registry completes both gates without task-tool calls;
 2. recover any durable report without an event;
 3. call one batched non-blocking snapshot first, then query only targets absent
-   from that response with their own cursors;
+   from that response with their own cursors; coverage requires an exact
+   structured task object, boolean `changed`, and returned cursor matching the
+   stored old cursor;
 4. if changed, read only the new terminal turn/report and validate its stable
    assignment identity;
 5. repeat that task until no unconsumed revision remains through the sweep's
@@ -84,10 +91,15 @@ status requests:
 6. persist the new cursor only after successful consumption; and
 7. stay silent when the entire sweep is unchanged.
 
-The `PostToolUse(wait_threads)` Hook records which stable task addresses were
-actually present in each snapshot result for the active `turn_id`. Both entry
+The `PostToolUse(wait_threads)` Hook strictly parses which stable task addresses
+were actually present in each snapshot result for the active `turn_id` and
+persists their new cursors. An echoed task ID or error prose is not coverage. Both entry
 and pre-final coverage are required; draining only local mailbox files cannot
 pass the finalizer. A per-turn call limit prevents polling loops.
+
+The `PreToolUse` Hook blocks common write, dispatch, and integration paths until
+entry coverage exists. A covered mutation after an early Pre-final invalidates
+that phase so it cannot be reused at finalization.
 
 At user-turn entry, invalidate `final_gate_passed`. Immediately before final,
 run the registry-wide sweep even for an unrelated question. A wrapper or host

@@ -18,6 +18,10 @@
   "branch_policy": "ephemeral-cherry-pick",
   "execution_mode": "write",
   "external_side_effects": [],
+  "preflight": {
+    "mode": "verified-local",
+    "verified_at": "2026-08-09T00:00:00Z"
+  },
   "status": "delivered",
   "delivery": {"delivery_id": "delivery-01", "delivered_at": "2026-08-09T00:00:00.000Z"},
   "acknowledgement": null,

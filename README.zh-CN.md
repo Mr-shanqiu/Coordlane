@@ -21,8 +21,12 @@ Coordlane 是一个本地优先的 Codex 插件，用一个 Captain 主控
 - 终态报告先持久化，再以 revision 和 digest 绑定通知。
 - 经过用户审阅的 `Stop` Hook 会在 Crew 正常结束前强制检查终态证据和一次性
   Captain 通知。
-- 通过 `PostToolUse(wait_threads)` 记录回合开始和回复前真实发生的零等待任务
-  快照，不再只相信本地台账声称“已经扫描”。
+- 通过 `PostToolUse(wait_threads)` 严格解析回合开始和回复前的结构化零等待
+  快照并保存每个 Crew cursor；错误文本或回显 ID 不能伪装成扫描证据。
+- 定向 `PreToolUse` 门禁会在 Turn-entry 完成前阻止常见写入路径，并在后续
+  写操作发生时让过早完成的 Pre-final 失效。
+- 内置本地 operator 会自行取得 Git 派发证据，并一次生成 durable report/event，
+  不要求 AI 临时编写状态脚本。
 - 可执行 finalizer 会拒绝缺少本回合全 registry 扫描、freshness 未知或仍有
   未读终态结果的 final 输出。
 - Crew 自报测试与 Captain 独立复验分开。
@@ -43,10 +47,11 @@ Coordlane 是一个本地优先的 Codex 插件，用一个 Captain 主控
 ## 当前可运行内容
 
 - 一个可安装的 Codex 插件，内置 [`coordlane` Skill](skills/coordlane/SKILL.md)；
-- 经过审阅后启用的 `Stop` 和 `PostToolUse` 生命周期 [Hooks](hooks/hooks.json)；
+- 经过审阅后启用的 `PreToolUse`、`Stop` 和 `PostToolUse` 生命周期 [Hooks](hooks/hooks.json)；
 - Captain、Crew、报告和项目地图[模板](templates/)；
 - 7 个机器可读 [Schema](schemas/)；
 - Node.js 标准库实现的[文件状态仓参考](reference/README.md)；
+- 支持的本地状态操作入口 [`bin/coordlane.mjs`](bin/coordlane.mjs)；
 - 当前宿主的 [Codex desktop 适配器](adapters/codex/README.md)；
 - 15 个真实失败场景，以及 worktree、伪回执、身份冲突、额度和并发写入对抗测试。
 
@@ -90,6 +95,10 @@ node reference/coordlane.mjs bind-captain "$STATE_DIR" captain-thread local
 node reference/coordlane.mjs status "$STATE_DIR"
 ```
 
+注册、派单、Git 实证预检、ACK、终态报告与事件、验证、合流记录、释放和状态
+查询统一使用 `node bin/coordlane.mjs <command> "$STATE_DIR" <payload.json>`；
+详见[操作入口说明](reference/README.md)。
+
 ## Codex 可靠性规则
 
 当前 Codex desktop 提供稳定 ID、任务列表、读取、消息投递、有界等待、
@@ -98,7 +107,8 @@ cursor 和归档能力。Coordlane 按带生命周期 Hook 的 Level 2 运行：
 1. 使用 `assignment_id` 派发；
 2. 读取目标任务，确认 ACK 闭环；
 3. 每个已登记且未归档的 Crew 独立保存 cursor；
-4. 由 Hook 验证 turn-entry 和 pre-final 确实执行了 `wait_threads` 零等待快照；
+4. 由 Hook 严格解析 turn-entry 和 pre-final 的 `wait_threads` 零等待快照，核对
+   旧 cursor 后才保存新 cursor；
 5. 为节省额度先批量调用，只对返回中缺失的目标做单独补扫；
 6. 只消费已持久化且 revision、digest 匹配的报告；
 7. durable report/event 形成后才允许发送一次纯编号；

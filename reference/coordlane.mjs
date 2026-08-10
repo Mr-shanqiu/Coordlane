@@ -155,7 +155,7 @@ const requireStore = (root) => {
   return paths;
 };
 
-export const initProject = (root, projectId, options = {}) => {
+export const initProject = (root, projectId, options = {}) => withStoreLock(root, () => {
   const paths = storePaths(root);
   if (fs.existsSync(paths.project)) throw new Error(`Coordlane store already exists: ${root}`);
   ensureDirectory(paths.assignments);
@@ -196,12 +196,19 @@ export const initProject = (root, projectId, options = {}) => {
     claims: []
   });
   return { root, project_id: projectId };
-};
+});
 
 const projectFor = (root) => readJson(requireStore(root).project);
 const registryFor = (root) => readJson(requireStore(root).registry);
 const ledgerFor = (root) => readJson(requireStore(root).ledger);
 const ownershipFor = (root) => readJson(requireStore(root).ownership);
+
+export const statusSnapshot = (root) => ({
+  project: projectFor(root),
+  registry: registryFor(root),
+  ledger: ledgerFor(root),
+  ownership: ownershipFor(root)
+});
 
 export const bindCaptain = (root, input) => withStoreLock(root, () => {
   const paths = requireStore(root);
@@ -305,7 +312,7 @@ export const readWorker = (root, selector) => {
 };
 
 export const renameWorkerTitle = (root, workerId, title) =>
-  updateWorker(root, workerId, (worker) => ({ ...worker, title }));
+  withStoreLock(root, () => updateWorker(root, workerId, (worker) => ({ ...worker, title })));
 
 const assignmentPath = (root, assignmentId) =>
   path.join(requireStore(root).assignments, `${assignmentId}.json`);
@@ -326,19 +333,32 @@ const transition = (record, next, transitions, label) => {
 };
 
 const normalizeResource = (resource) => {
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(resource) || resource.startsWith("resource:")) {
-    return resource;
+  if (typeof resource !== "string" || resource.trim().length === 0) {
+    throw new Error("Resource must be a non-empty string");
   }
-  const normalized = path.posix.normalize(resource.replaceAll("\\", "/"));
-  return normalized.replace(/^\.\//, "").replace(/\/$/, "");
+  const value = resource.trim().normalize("NFC");
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) return value;
+  if (value.startsWith("resource:")) return value;
+  const normalized = path.posix.normalize(value.replaceAll("\\", "/"))
+    .replace(/^\.\//, "")
+    .replace(/\/$/, "");
+  if (path.posix.isAbsolute(normalized) || normalized === ".." || normalized.startsWith("../")) {
+    throw new Error(`File ownership resources must be repository-relative: ${resource}`);
+  }
+  // Most macOS development volumes are case-insensitive. Conservatively folding
+  // case prevents two workers from claiming aliases such as src/Foo and src/foo.
+  return process.platform === "darwin" ? normalized.toLocaleLowerCase("en-US") : normalized;
 };
 
 export const resourcesOverlap = (left, right) => {
   const a = normalizeResource(left);
   const b = normalizeResource(right);
   if (a === b) return true;
-  if (a.includes("://") || b.includes("://") || a.startsWith("resource:") || b.startsWith("resource:")) {
-    return false;
+  if (a.includes("://") || b.includes("://")) return false;
+  if (a.startsWith("resource:") || b.startsWith("resource:")) {
+    if (!a.startsWith("resource:") || !b.startsWith("resource:")) return false;
+    return b.startsWith(`${a}/`) || a.startsWith(`${b}/`) ||
+      b.startsWith(`${a}:`) || a.startsWith(`${b}:`);
   }
   return b.startsWith(`${a}/`) || a.startsWith(`${b}/`);
 };
@@ -350,11 +370,18 @@ const listAssignments = (root) => {
     .map((name) => readJson(path.join(directory, name)));
 };
 
-export const createAssignment = (root, input) => {
+export const createAssignment = (root, input) => withStoreLock(root, () => {
   const project = projectFor(root);
   const worker = readWorker(root, input.worker_id);
   if (!worker || worker.archived) throw new Error(`Worker is unavailable: ${input.worker_id}`);
   if (readAssignment(root, input.assignment_id)) throw new Error(`Duplicate assignment_id: ${input.assignment_id}`);
+  for (const owned of input.owned_resources ?? []) {
+    const prohibited = [...(input.forbidden_resources ?? []), ...(input.shared_entrypoints ?? [])]
+      .find((resource) => resourcesOverlap(owned, resource));
+    if (prohibited) {
+      throw new Error(`Owned resource ${owned} overlaps forbidden or shared resource ${prohibited}`);
+    }
+  }
   const timestamp = now();
   const assignment = {
     schema_version: SCHEMA_VERSION,
@@ -376,6 +403,7 @@ export const createAssignment = (root, input) => {
     branch_policy: input.branch_policy,
     execution_mode: input.execution_mode ?? "write",
     external_side_effects: input.external_side_effects ?? [],
+    preflight: null,
     status: "draft",
     delivery: null,
     acknowledgement: null,
@@ -388,9 +416,9 @@ export const createAssignment = (root, input) => {
   };
   atomicWriteJson(assignmentPath(root, assignment.assignment_id), assignment);
   return assignment;
-};
+});
 
-export const recordExternalAssignment = (root, input) => {
+export const recordExternalAssignment = (root, input) => withStoreLock(root, () => {
   const assignment = createAssignment(root, { ...input, origin: input.origin ?? "user_direct" });
   assignment.status = "running";
   assignment.delivery = { delivered_at: now(), delivery_id: input.delivery_id ?? "external" };
@@ -412,7 +440,7 @@ export const recordExternalAssignment = (root, input) => {
   entry.origin = assignment.origin;
   atomicWriteJson(requireStore(root).ledger, ledger);
   return assignment;
-};
+});
 
 const assertPreflight = (assignment, preflight) => {
   const required = [
@@ -466,7 +494,7 @@ const reserveOwnership = (root, assignment) => {
   atomicWriteJson(paths.ownership, ledger);
 };
 
-export const dispatchAssignment = (root, assignmentId, input) => {
+export const dispatchAssignment = (root, assignmentId, input) => withStoreLock(root, () => {
   const assignment = readAssignment(root, assignmentId);
   if (!assignment) throw new Error(`Unknown assignment_id: ${assignmentId}`);
   const worker = readWorker(root, assignment.worker_id);
@@ -478,11 +506,16 @@ export const dispatchAssignment = (root, assignmentId, input) => {
   assertPreflight(assignment, input.preflight);
   reserveOwnership(root, assignment);
   transition(assignment, "dispatched", ASSIGNMENT_TRANSITIONS, "assignment");
+  assignment.preflight = input.evidence ?? {
+    mode: "attested",
+    verified_at: now(),
+    checks: { ...input.preflight }
+  };
   atomicWriteJson(assignmentPath(root, assignmentId), assignment);
   return assignment;
-};
+});
 
-export const recordDelivery = (root, assignmentId, delivery) => {
+export const recordDelivery = (root, assignmentId, delivery) => withStoreLock(root, () => {
   const assignment = readAssignment(root, assignmentId);
   transition(assignment, "delivered", ASSIGNMENT_TRANSITIONS, "assignment");
   assignment.delivery = {
@@ -491,9 +524,9 @@ export const recordDelivery = (root, assignmentId, delivery) => {
   };
   atomicWriteJson(assignmentPath(root, assignmentId), assignment);
   return assignment;
-};
+});
 
-export const acknowledgeAssignment = (root, assignmentId, acknowledgement) => {
+export const acknowledgeAssignment = (root, assignmentId, acknowledgement) => withStoreLock(root, () => {
   const assignment = readAssignment(root, assignmentId);
   const required = [
     "latest_user_message_contains_assignment",
@@ -507,9 +540,9 @@ export const acknowledgeAssignment = (root, assignmentId, acknowledgement) => {
   assignment.acknowledgement = { ...acknowledgement, acknowledged_at: now() };
   atomicWriteJson(assignmentPath(root, assignmentId), assignment);
   return assignment;
-};
+});
 
-export const startAssignment = (root, assignmentId) => {
+export const startAssignment = (root, assignmentId) => withStoreLock(root, () => {
   const assignment = readAssignment(root, assignmentId);
   transition(assignment, "running", ASSIGNMENT_TRANSITIONS, "assignment");
   atomicWriteJson(assignmentPath(root, assignmentId), assignment);
@@ -524,9 +557,9 @@ export const startAssignment = (root, assignmentId) => {
   entry.origin = assignment.origin;
   atomicWriteJson(requireStore(root).ledger, ledger);
   return assignment;
-};
+});
 
-export const requestRevision = (root, assignmentId) => {
+export const requestRevision = (root, assignmentId) => withStoreLock(root, () => {
   const assignment = readAssignment(root, assignmentId);
   transition(assignment, "revision_requested", ASSIGNMENT_TRANSITIONS, "assignment");
   assignment.coordinator_disposition = "revision_requested";
@@ -534,15 +567,15 @@ export const requestRevision = (root, assignmentId) => {
   assignment.attempt_id = `${assignment.assignment_id}.r${assignment.attempt_number}`;
   atomicWriteJson(assignmentPath(root, assignmentId), assignment);
   return assignment;
-};
+});
 
-export const resumeRevision = (root, assignmentId) => {
+export const resumeRevision = (root, assignmentId) => withStoreLock(root, () => {
   const assignment = readAssignment(root, assignmentId);
   transition(assignment, "running", ASSIGNMENT_TRANSITIONS, "assignment");
   assignment.coordinator_disposition = "pending_review";
   atomicWriteJson(assignmentPath(root, assignmentId), assignment);
   return assignment;
-};
+});
 
 const reportDirectory = (root, workerId, assignmentId) =>
   path.join(requireStore(root).reports, workerId, assignmentId);
@@ -624,6 +657,48 @@ const assertTerminalReportContent = (content) => {
   }
 };
 
+const comparableWorkspace = (value) => {
+  const resolved = path.resolve(value);
+  try {
+    return fs.realpathSync(resolved);
+  } catch {
+    return resolved;
+  }
+};
+
+const assertReportScope = (root, assignment, content) => {
+  const worker = readWorker(root, assignment.worker_id);
+  if (!worker) throw new Error(`Unknown worker_id: ${assignment.worker_id}`);
+  if (comparableWorkspace(content.workspace.path) !== comparableWorkspace(worker.workspace)) {
+    throw new Error("Reported workspace does not match the registered worker workspace");
+  }
+  if (content.workspace.branch !== worker.branch) {
+    throw new Error("Reported branch does not match the registered worker branch");
+  }
+  if (content.commit !== null && content.commit !== content.workspace.head) {
+    throw new Error("Reported commit must match the reported workspace HEAD");
+  }
+  for (const check of content.worker_validation ?? []) {
+    if (check.subject_head !== content.workspace.head) {
+      throw new Error("Worker validation must target the reported workspace HEAD");
+    }
+  }
+  for (const modified of content.modified_or_owned_files ?? []) {
+    const owner = assignment.owned_resources.find((resource) => resourcesOverlap(modified, resource));
+    if (!owner) throw new Error(`Reported modification is outside assignment ownership: ${modified}`);
+    const prohibited = [...assignment.forbidden_resources, ...assignment.shared_entrypoints]
+      .find((resource) => resourcesOverlap(modified, resource));
+    if (prohibited) {
+      throw new Error(`Reported modification overlaps forbidden or shared resource ${prohibited}: ${modified}`);
+    }
+  }
+  for (const effect of content.runtime_state?.external_side_effects ?? []) {
+    if (!assignment.external_side_effects.includes(effect)) {
+      throw new Error(`Reported external side effect was not authorized: ${effect}`);
+    }
+  }
+};
+
 const persistReportUnlocked = (root, input) => {
   const assignment = readAssignment(root, input.assignment_id);
   if (!assignment) throw new Error(`Unknown assignment_id: ${input.assignment_id}`);
@@ -632,6 +707,7 @@ const persistReportUnlocked = (root, input) => {
   if (input.attempt_id !== assignment.attempt_id) throw new Error("Stale or foreign attempt_id");
   if (input.ownership_epoch !== assignment.ownership_epoch) throw new Error("Stale ownership_epoch");
   assertTerminalReportContent(input.content);
+  assertReportScope(root, assignment, input.content);
   const revision = assignment.worker_report_revision + 1;
   if (input.report_revision !== revision) throw new Error(`Expected report_revision ${revision}`);
   const immutable = {
@@ -769,9 +845,50 @@ export const beginTurn = (root, input = {}) => withStoreLock(root, () => {
 
 const workerAddressKey = (worker) => `${worker.host_id}/${worker.thread_id}`;
 
+export const activeSweepTargets = (root) => activeMonitoredWorkers(root).map((worker) => ({
+  worker_id: worker.worker_id,
+  thread_id: worker.thread_id,
+  host_id: worker.host_id,
+  after_cursor: worker.status_cursor
+}));
+
+export const captainEntryGate = (root, turnId) => {
+  const ledger = ledgerFor(root);
+  const gate = ledger.turn_gate;
+  const active = gate && gate.turn_id === turnId;
+  return {
+    active: Boolean(active),
+    required_workers: active ? gate.required_workers : [],
+    entry_complete: Boolean(active && gate.entry_sweep.completed_at),
+    pre_final_complete: Boolean(active && gate.pre_final_sweep.completed_at),
+    scan_limit_reached: Boolean(active && gate.scan_limit_reached),
+    registry_changed: Boolean(active && gate.registry_changed)
+  };
+};
+
+export const recordCaptainToolUse = (root, input) => withStoreLock(root, () => {
+  const paths = requireStore(root);
+  const ledger = readJson(paths.ledger);
+  const gate = ledger.turn_gate;
+  if (!gate || gate.turn_id !== input.turn_id) {
+    return { allowed: false, reason: "missing_active_turn_gate" };
+  }
+  if (gate.required_workers.length > 0 && !gate.entry_sweep.completed_at) {
+    return { allowed: false, reason: "entry_sweep_required" };
+  }
+  if (gate.required_workers.length > 0 && gate.pre_final_sweep.completed_at) {
+    gate.pre_final_sweep = sweepPhase();
+    ledger.final_gate_passed = false;
+    ledger.freshness = "stale";
+    atomicWriteJson(paths.ledger, ledger);
+  }
+  return { allowed: true };
+});
+
 export const recordSweepObservation = (root, input) => withStoreLock(root, () => {
   const paths = requireStore(root);
   const ledger = readJson(paths.ledger);
+  const registry = readJson(paths.registry);
   const gate = ledger.turn_gate;
   if (!gate || gate.turn_id !== input.turn_id) throw new Error("Sweep observation is not for the active turn");
   if (input.timeout_ms !== 0) throw new Error("Coordlane accepts only non-blocking task snapshots");
@@ -789,7 +906,7 @@ export const recordSweepObservation = (root, input) => withStoreLock(root, () =>
       snapshot_call_limit: gate.snapshot_call_limit
     };
   }
-  if (registryFor(root).registry_revision !== gate.registry_revision) {
+  if (registry.registry_revision !== gate.registry_revision) {
     gate.registry_changed = true;
     ledger.freshness = "stale";
     ledger.final_gate_passed = false;
@@ -810,11 +927,17 @@ export const recordSweepObservation = (root, input) => withStoreLock(root, () =>
   for (const observed of input.observed_workers ?? []) {
     const key = workerAddressKey(observed);
     if (!required.has(key)) continue;
+    const registered = registry.workers.find((worker) => workerAddressKey(worker) === key);
+    if (!registered) continue;
+    if (!("cursor" in observed) || observed.cursor === null || observed.cursor === undefined) continue;
+    if ((observed.after_cursor ?? null) !== (registered.status_cursor ?? null)) continue;
+    registered.status_cursor = observed.cursor;
     if (!phase.observed_workers.some((worker) => workerAddressKey(worker) === key)) {
       phase.observed_workers.push(required.get(key));
     }
   }
   if (phase.observed_workers.length === gate.required_workers.length) phase.completed_at = now();
+  atomicWriteJson(paths.registry, registry);
   atomicWriteJson(paths.ledger, ledger);
   return {
     turn_id: gate.turn_id,
@@ -921,6 +1044,18 @@ const emitEventUnlocked = (root, input) => {
 export const emitEvent = (root, input) =>
   withStoreLock(root, () => emitEventUnlocked(root, input));
 
+export const persistTerminalReport = (root, input) => withStoreLock(root, () => {
+  const report = persistReportUnlocked(root, input);
+  const event = emitEventUnlocked(root, {
+    worker_id: report.worker_id,
+    assignment_id: report.assignment_id,
+    report_revision: report.report_revision,
+    report_digest: report.report_digest,
+    priority: input.priority ?? (report.content.status === "failed" ? "P0" : "P1")
+  });
+  return { report, event };
+});
+
 const recordNotificationDeliveryUnlocked = (root, eventId, input = {}) => {
   const filePath = eventFiles(root).find((candidate) => readJson(candidate).event_id === eventId);
   if (!filePath) throw new Error(`Unknown event_id: ${eventId}`);
@@ -994,12 +1129,12 @@ export const terminalGateSnapshot = (root, sessionId) => {
   };
 };
 
-export const recordSessionNotificationDelivery = (root, sessionId, input = {}) => {
+export const recordSessionNotificationDelivery = (root, sessionId, input = {}) => withStoreLock(root, () => {
   const gate = terminalGateSnapshot(root, sessionId);
   if (!gate.monitored || !gate.event_id) return { recorded: false, reason: "no_pending_terminal_event" };
   const result = recordNotificationDelivery(root, gate.event_id, input);
   return { recorded: true, ...result };
-};
+});
 
 const verifyEventReport = (root, event) => {
   const report = readReport(root, event.worker_id, event.assignment_id, event.report_revision);
@@ -1047,7 +1182,7 @@ const setEventStatus = (root, eventId, status) => {
   return event;
 };
 
-export const ackEvent = (root, eventId) => {
+export const ackEvent = (root, eventId) => withStoreLock(root, () => {
   const filePath = eventFiles(root).find((candidate) => readJson(candidate).event_id === eventId);
   if (!filePath) throw new Error(`Unknown event_id: ${eventId}`);
   let event = readJson(filePath);
@@ -1059,7 +1194,7 @@ export const ackEvent = (root, eventId) => {
     event = setEventStatus(root, eventId, "acknowledged");
   }
   return event;
-};
+});
 
 export const scanEvents = (root, workerId, afterCursor, highWatermark = Number.POSITIVE_INFINITY, batchSize = 50) =>
   eventFiles(root)
@@ -1209,7 +1344,7 @@ const assertFinalizableUnlocked = (root) => {
 export const assertFinalizable = (root) =>
   withStoreLock(root, () => assertFinalizableUnlocked(root));
 
-export const closeAssignment = (root, assignmentId, input) => {
+export const closeAssignment = (root, assignmentId, input) => withStoreLock(root, () => {
   const assignment = readAssignment(root, assignmentId);
   if (!assignment) throw new Error(`Unknown assignment_id: ${assignmentId}`);
   if (!["integrated", "validated", "failed", "superseded", "rejected"].includes(assignment.status)) {
@@ -1252,9 +1387,9 @@ export const closeAssignment = (root, assignmentId, input) => {
       (value) => transitionReport(value, "archived"));
   }
   return assignment;
-};
+});
 
-export const validateReport = (root, input) => {
+export const validateReport = (root, input) => withStoreLock(root, () => {
   const report = verifyEventReport(root, {
     event_id: `validation:${input.assignment_id}:${input.report_revision}`,
     worker_id: input.worker_id,
@@ -1301,9 +1436,9 @@ export const validateReport = (root, input) => {
   entry.last_validated_revision = Math.max(entry.last_validated_revision, input.report_revision);
   atomicWriteJson(requireStore(root).ledger, ledger);
   return { report: updated, assignment };
-};
+});
 
-export const integrateChange = (root, assignmentId, input) => {
+export const integrateChange = (root, assignmentId, input) => withStoreLock(root, () => {
   const assignment = readAssignment(root, assignmentId);
   if (assignment.status !== "validated") throw new Error("Coordinator validation is required before integration");
   if (assignment.branch_policy === "ephemeral-cherry-pick" && input.strategy !== "cherry-pick") {
@@ -1329,16 +1464,16 @@ export const integrateChange = (root, assignmentId, input) => {
   };
   atomicWriteJson(assignmentPath(root, assignmentId), assignment);
   return assignment;
-};
+});
 
-export const archiveWorker = (root, workerId) => {
+export const archiveWorker = (root, workerId) => withStoreLock(root, () => {
   const worker = readWorker(root, workerId);
   if (worker.active_assignment_id) throw new Error("Cannot archive a worker with an active assignment");
   const pending = eventFiles(root).map((filePath) => readJson(filePath))
     .some((event) => event.worker_id === workerId && event.status !== "acknowledged");
   if (pending) throw new Error("Cannot archive a worker with unacknowledged events");
   return updateWorker(root, workerId, (value) => ({ ...value, archived: true }));
-};
+});
 
 export const workspaceStatus = (workspace) => {
   const status = execFileSync("git", ["status", "--porcelain=v1", "--branch"], {
@@ -1346,7 +1481,67 @@ export const workspaceStatus = (workspace) => {
     encoding: "utf8"
   });
   const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: workspace, encoding: "utf8" }).trim();
-  return { workspace, head, clean: status.split("\n").slice(1).filter(Boolean).length === 0, status };
+  const branch = execFileSync("git", ["branch", "--show-current"], {
+    cwd: workspace,
+    encoding: "utf8"
+  }).trim();
+  return { workspace, branch, head, clean: status.split("\n").slice(1).filter(Boolean).length === 0, status };
+};
+
+const dependencyReady = (root, dependency) => {
+  const candidate = readAssignment(root, dependency);
+  return Boolean(candidate && ["validated", "integrated", "closed"].includes(candidate.status));
+};
+
+export const dispatchVerifiedAssignment = (root, assignmentId, input = {}) => {
+  const assignment = readAssignment(root, assignmentId);
+  if (!assignment) throw new Error(`Unknown assignment_id: ${assignmentId}`);
+  const worker = readWorker(root, assignment.worker_id);
+  if (!worker) throw new Error(`Unknown worker_id: ${assignment.worker_id}`);
+  const workspace = workspaceStatus(worker.workspace);
+  const dependenciesReady = assignment.dependencies.every((dependency) => dependencyReady(root, dependency));
+  const sideEffectsAuthorized = assignment.external_side_effects.length === 0 ||
+    input.external_side_effects_approved === true;
+  return dispatchAssignment(root, assignmentId, {
+    preflight: {
+      workspace_clean: workspace.clean,
+      branch_policy_valid: assignment.branch_policy === worker.branch_policy && workspace.branch === worker.branch,
+      dependencies_ready: dependenciesReady,
+      runtime_safe: sideEffectsAuthorized,
+      ownership_clear: true,
+      truth_source_final: assignment.execution_mode !== "write" || input.truth_source_final === true
+    },
+    evidence: {
+      mode: "verified-local",
+      verified_at: now(),
+      workspace,
+      dependencies: assignment.dependencies.map((dependency) => ({
+        assignment_id: dependency,
+        status: readAssignment(root, dependency)?.status ?? "missing"
+      })),
+      external_side_effects_authorized: sideEffectsAuthorized,
+      truth_source_final: assignment.execution_mode !== "write" || input.truth_source_final === true
+    }
+  });
+};
+
+export const acknowledgeAssignmentFromSnapshot = (root, assignmentId, snapshot) => {
+  const assignment = readAssignment(root, assignmentId);
+  if (!assignment) throw new Error(`Unknown assignment_id: ${assignmentId}`);
+  if (!snapshot || typeof snapshot !== "object") throw new Error("ACK requires a task snapshot object");
+  if (snapshot.origin && snapshot.origin !== "coordinator") {
+    throw new Error(`Worker is occupied by ${snapshot.origin} work`);
+  }
+  const userMessage = snapshot.latest_user_message ?? snapshot.latestUserMessage;
+  const assistantMessage = snapshot.latest_assistant_message ?? snapshot.latestAssistantMessage;
+  const activeAssignment = snapshot.active_assignment_id ?? snapshot.activeAssignmentId;
+  return acknowledgeAssignment(root, assignmentId, {
+    latest_user_message_contains_assignment:
+      typeof userMessage === "string" && userMessage.includes(assignmentId),
+    assistant_repeated_scope:
+      typeof assistantMessage === "string" && assistantMessage.includes(assignmentId),
+    active_turn_matches: activeAssignment === assignmentId
+  });
 };
 
 export const notificationPolicy = (event, captainState) => {
