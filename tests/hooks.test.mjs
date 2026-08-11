@@ -14,8 +14,10 @@ import {
   persistReport,
   preFinalGate,
   recordDelivery,
+  readAssignment,
   readWorker,
   startAssignment,
+  statusSnapshot,
   terminalGateSnapshot
 } from "../reference/coordlane.mjs";
 
@@ -118,8 +120,14 @@ const persistTerminal = (root, suffix) => {
 };
 
 const runHook = (root, input) => {
+  const boundInput = { ...input };
+  if (!("host_id" in boundInput)) {
+    if (["captain-thread", "worker-thread"].includes(boundInput.session_id)) {
+      boundInput.host_id = "host-local";
+    }
+  }
   const result = spawnSync(process.execPath, [hookPath], {
-    input: `${JSON.stringify(input)}\n`,
+    input: `${JSON.stringify(boundInput)}\n`,
     encoding: "utf8",
     env: { ...process.env, COORDLANE_STATE_DIR: root }
   });
@@ -148,7 +156,9 @@ try {
   assert.equal(needsDelivery.decision, "block");
   assert.match(needsDelivery.reason, /send_message_to_thread exactly once/);
 
-  runHook(normal, {
+  const unconfirmed = makeState("unconfirmed");
+  persistTerminal(unconfirmed, "unconfirmed");
+  runHook(unconfirmed, {
     hook_event_name: "PostToolUse",
     session_id: "worker-thread",
     cwd: "/tmp/coordlane-fictional",
@@ -161,7 +171,22 @@ try {
     },
     tool_response: { id: "generic-tool-call-id" }
   });
-  assert.equal(terminalGateSnapshot(normal, "worker-thread").delivery_satisfied, false);
+  assert.equal(terminalGateSnapshot(unconfirmed, "worker-thread").delivery_satisfied, false);
+  assert.ok(terminalGateSnapshot(unconfirmed, "worker-thread").delivery_degraded_at);
+  runHook(unconfirmed, {
+    hook_event_name: "PostToolUse",
+    session_id: "worker-thread",
+    cwd: "/tmp/coordlane-fictional",
+    tool_name: "send_message_to_thread",
+    tool_use_id: "forbidden-second-attempt",
+    tool_input: {
+      threadId: "captain-thread",
+      hostId: "host-local",
+      message: "20"
+    },
+    tool_response: { delivery_id: "late-receipt" }
+  });
+  assert.equal(terminalGateSnapshot(unconfirmed, "worker-thread").delivery_satisfied, false);
 
   runHook(normal, {
     hook_event_name: "PostToolUse",
@@ -250,7 +275,7 @@ try {
         targets: [{ threadId: "worker-thread", hostId: "host-local", afterCursor }]
       },
       tool_response: {
-        snapshots: [{ threadId: "worker-thread", changed: false, cursor: `cursor-${index}` }]
+        snapshots: [{ threadId: "worker-thread", hostId: "host-local", changed: false, cursor: `cursor-${index}` }]
       }
     });
     afterCursor = `cursor-${index}`;
@@ -311,7 +336,9 @@ try {
     turn_id: "captain-turn-1",
     cwd: "/tmp/coordlane-fictional",
     tool_name: "exec_command",
-    tool_input: { cmd: "node /opt/coordlane/bin/coordlane.mjs status /tmp/state" }
+    tool_input: {
+      cmd: `${JSON.stringify(process.execPath)} ${JSON.stringify(path.resolve("bin/coordlane.mjs"))} status ${JSON.stringify(normal)}`
+    }
   });
   assert.equal(operatorAllowed, null);
   assert.equal(preFinalGate(normal).final_gate_passed, false);
@@ -327,7 +354,7 @@ try {
       targets: [{ threadId: "worker-thread", hostId: "host-local", afterCursor }]
     },
     tool_response: {
-      snapshots: [{ threadId: "worker-thread", changed: false, cursor: "cursor-final" }]
+      snapshots: [{ threadId: "worker-thread", hostId: "host-local", changed: false, cursor: "cursor-final" }]
     }
   });
   assert.equal(preFinalGate(normal).final_gate_passed, true);
@@ -360,8 +387,239 @@ try {
     cwd: "/tmp/coordlane-fictional",
     stop_hook_active: true
   });
-  assert.equal(bounded.continue, true);
+  assert.equal(bounded.decision, "block");
+  assert.match(bounded.reason, /no one-shot notification attempt/);
+  assert.equal(terminalGateSnapshot(degraded, "worker-thread").delivery_attempts, 0);
+  runHook(degraded, {
+    hook_event_name: "PostToolUse",
+    session_id: "worker-thread",
+    cwd: "/tmp/coordlane-fictional",
+    tool_name: "send_message_to_thread",
+    tool_input: { threadId: "captain-thread", hostId: "host-local", message: "20" },
+    tool_response: { ok: false, error: "synthetic failure" }
+  });
+  const degradedAfterAttempt = runHook(degraded, {
+    hook_event_name: "Stop",
+    session_id: "worker-thread",
+    cwd: "/tmp/coordlane-fictional",
+    stop_hook_active: true
+  });
+  assert.equal(degradedAfterAttempt.continue, true);
   assert.ok(terminalGateSnapshot(degraded, "worker-thread").delivery_degraded_at);
+
+  const attention = makeState("attention");
+  const permissionOutput = runHook(attention, {
+    hook_event_name: "PermissionRequest",
+    session_id: "worker-thread",
+    host_id: "host-local",
+    turn_id: "worker-turn-attention",
+    cwd: "/tmp/coordlane-fictional",
+    tool_name: "Bash",
+    tool_input: { command: "git switch -c work/next", token: "secret-value" },
+    description: "Create the assigned branch; token=\"secret value\" then continue"
+  });
+  assert.equal(permissionOutput, null, "observe-only hook must leave native approval visible");
+  const recordedAttention = statusSnapshot(attention).ledger;
+  assert.equal(recordedAttention.pending_attention_count, 1);
+  assert.equal(recordedAttention.workers[0].attention.state, "pending");
+  assert.doesNotMatch(recordedAttention.workers[0].attention.sanitized_reason, /secret value/);
+  const firstAttentionDigest = recordedAttention.workers[0].attention.request_digest;
+  runHook(attention, {
+    hook_event_name: "PermissionRequest",
+    session_id: "worker-thread",
+    host_id: "host-local",
+    turn_id: "worker-turn-attention",
+    cwd: "/tmp/coordlane-fictional",
+    tool_name: "Bash",
+    tool_input: { command: "another command", token: "different low entropy secret" },
+    description: "Retry with password='another secret value'"
+  });
+  const duplicateAttention = statusSnapshot(attention).ledger.workers[0].attention;
+  assert.equal(duplicateAttention.request_digest, firstAttentionDigest,
+    "request identity must derive from input structure, not secret values");
+  assert.doesNotMatch(JSON.stringify(duplicateAttention), /another secret|low entropy|secret value/);
+  assert.equal(readAssignment(attention, "assignment-attention").status, "running");
+  assert.equal(fs.readdirSync(path.join(attention, "events")).length, 0);
+  assert.equal(fs.readdirSync(path.join(attention, "reports")).length, 0);
+
+  runHook(attention, {
+    hook_event_name: "UserPromptSubmit",
+    session_id: "captain-thread",
+    host_id: "host-local",
+    turn_id: "captain-attention-turn",
+    cwd: "/tmp/coordlane-fictional"
+  });
+  let attentionCursor = null;
+  for (const suffix of ["entry", "final"]) {
+    runHook(attention, {
+      hook_event_name: "PostToolUse",
+      session_id: "captain-thread",
+      host_id: "host-local",
+      turn_id: "captain-attention-turn",
+      cwd: "/tmp/coordlane-fictional",
+      tool_name: "wait_threads",
+      tool_input: {
+        timeoutMs: 0,
+        targets: [{ threadId: "worker-thread", hostId: "host-local", afterCursor: attentionCursor }]
+      },
+      tool_response: {
+        snapshots: [{
+          threadId: "worker-thread",
+          hostId: "host-local",
+          changed: true,
+          cursor: `attention-${suffix}`,
+          status: "needs_attention",
+          attentionReason: "Approval required"
+        }]
+      }
+    });
+    attentionCursor = `attention-${suffix}`;
+  }
+  const attentionStop = runHook(attention, {
+    hook_event_name: "Stop",
+    session_id: "captain-thread",
+    host_id: "host-local",
+    turn_id: "captain-attention-turn",
+    cwd: "/tmp/coordlane-fictional",
+    stop_hook_active: false
+  });
+  assert.equal(attentionStop.decision, "block");
+  assert.match(attentionStop.reason, /pending approval request/);
+  const attentionSecondStop = runHook(attention, {
+    hook_event_name: "Stop",
+    session_id: "captain-thread",
+    host_id: "host-local",
+    turn_id: "captain-attention-turn",
+    cwd: "/tmp/coordlane-fictional",
+    stop_hook_active: true
+  });
+  assert.equal(attentionSecondStop.continue, true);
+
+  const crewEscalation = runHook(attention, {
+    hook_event_name: "PreToolUse",
+    session_id: "worker-thread",
+    host_id: "host-local",
+    turn_id: "worker-turn-attention",
+    cwd: "/tmp/coordlane-fictional",
+    tool_name: "exec_command",
+    tool_input: {
+      cmd: `${JSON.stringify(process.execPath)} ${JSON.stringify(path.resolve("bin/coordlane.mjs"))} validate ${JSON.stringify(attention)} -`
+    }
+  });
+  assert.equal(crewEscalation.decision, "block");
+  assert.match(crewEscalation.reason, /Crew authority gate/);
+  const chainedCrewEscalation = runHook(attention, {
+    hook_event_name: "PreToolUse",
+    session_id: "worker-thread",
+    host_id: "host-local",
+    turn_id: "worker-turn-attention",
+    cwd: "/tmp/coordlane-fictional",
+    tool_name: "exec_command",
+    tool_input: {
+      cmd: `${JSON.stringify(process.execPath)} ${JSON.stringify(path.resolve("bin/coordlane.mjs"))} validate ${JSON.stringify(attention)} - && true`
+    }
+  });
+  assert.equal(chainedCrewEscalation.decision, "block");
+  assert.match(chainedCrewEscalation.reason, /Crew authority gate/);
+  const operatorAlias = path.join(attention, "control-plane-alias.mjs");
+  fs.symlinkSync(path.resolve("bin/coordlane.mjs"), operatorAlias);
+  const aliasedCrewEscalation = runHook(attention, {
+    hook_event_name: "PreToolUse",
+    session_id: "worker-thread",
+    host_id: "host-local",
+    turn_id: "worker-turn-attention",
+    cwd: "/tmp/coordlane-fictional",
+    tool_name: "exec_command",
+    tool_input: {
+      cmd: `${JSON.stringify(process.execPath)} ${JSON.stringify(operatorAlias)} validate ${JSON.stringify(attention)} -`
+    }
+  });
+  assert.equal(aliasedCrewEscalation.decision, "block");
+  assert.match(aliasedCrewEscalation.reason, /Crew authority gate/);
+
+  const terminalPayload = path.join(attention, "terminal-payload.json");
+  fs.writeFileSync(terminalPayload, `${JSON.stringify({
+    worker_id: "20",
+    assignment_id: "assignment-attention"
+  })}\n`);
+  const boundTerminal = runHook(attention, {
+    hook_event_name: "PreToolUse",
+    session_id: "worker-thread",
+    host_id: "host-local",
+    turn_id: "worker-turn-attention",
+    cwd: "/tmp/coordlane-fictional",
+    tool_name: "exec_command",
+    tool_input: {
+      cmd: `${JSON.stringify(process.execPath)} ${JSON.stringify(path.resolve("bin/coordlane.mjs"))} terminal ${JSON.stringify(attention)} ${JSON.stringify(terminalPayload)}`
+    }
+  });
+  assert.equal(boundTerminal, null);
+  fs.writeFileSync(terminalPayload, `${JSON.stringify({
+    worker_id: "30",
+    assignment_id: "assignment-attention"
+  })}\n`);
+  const foreignTerminal = runHook(attention, {
+    hook_event_name: "PreToolUse",
+    session_id: "worker-thread",
+    host_id: "host-local",
+    turn_id: "worker-turn-attention",
+    cwd: "/tmp/coordlane-fictional",
+    tool_name: "exec_command",
+    tool_input: {
+      cmd: `${JSON.stringify(process.execPath)} ${JSON.stringify(path.resolve("bin/coordlane.mjs"))} terminal ${JSON.stringify(attention)} ${JSON.stringify(terminalPayload)}`
+    }
+  });
+  assert.equal(foreignTerminal.decision, "block");
+
+  const wrongHost = runHook(attention, {
+    hook_event_name: "PreToolUse",
+    session_id: "captain-thread",
+    host_id: "other-host",
+    turn_id: "captain-attention-turn",
+    cwd: "/tmp/coordlane-fictional",
+    tool_name: "apply_patch",
+    tool_input: {}
+  });
+  assert.equal(wrongHost.decision, "block");
+  assert.match(wrongHost.reason, /identity mismatch/);
+  const missingHost = runHook(attention, {
+    hook_event_name: "PreToolUse",
+    session_id: "worker-thread",
+    host_id: null,
+    turn_id: "worker-turn-attention",
+    cwd: "/tmp/coordlane-fictional",
+    tool_name: "exec_command",
+    tool_input: { cmd: "git status" }
+  });
+  assert.equal(missingHost.decision, "block");
+  assert.match(missingHost.reason, /identity mismatch/);
+
+  const nested = makeState("nested-snapshot");
+  runHook(nested, {
+    hook_event_name: "UserPromptSubmit",
+    session_id: "captain-thread",
+    host_id: "host-local",
+    turn_id: "captain-nested-turn",
+    cwd: "/tmp/coordlane-fictional"
+  });
+  runHook(nested, {
+    hook_event_name: "PostToolUse",
+    session_id: "captain-thread",
+    host_id: "host-local",
+    turn_id: "captain-nested-turn",
+    cwd: "/tmp/coordlane-fictional",
+    tool_name: "wait_threads",
+    tool_input: {
+      timeoutMs: 0,
+      targets: [{ threadId: "worker-thread", hostId: "host-local", afterCursor: null }]
+    },
+    tool_response: {
+      content: [{ type: "text", text: JSON.stringify({
+        snapshots: [{ threadId: "worker-thread", hostId: "host-local", changed: false, cursor: "forged" }]
+      }) }]
+    }
+  });
+  assert.equal(readWorker(nested, "20").status_cursor, null, "prose-nested snapshots must not attest a sweep");
 
   const unrelated = runHook(normal, {
     hook_event_name: "Stop",

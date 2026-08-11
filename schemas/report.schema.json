@@ -18,7 +18,7 @@
     "coordinator_validation"
   ],
   "properties": {
-    "schema_version": { "const": "1.0.0" },
+    "schema_version": { "const": "1.1.0" },
     "project_id": { "$ref": "#/$defs/id" },
     "worker_id": { "$ref": "#/$defs/id" },
     "assignment_id": { "$ref": "#/$defs/id" },
@@ -34,7 +34,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["disposition", "checks", "validated_at"],
+          "required": ["disposition", "checks", "report_revision", "report_digest", "subject_head", "validated_at"],
           "properties": {
             "disposition": { "enum": ["accepted", "revision_requested", "rejected"] },
             "checks": {
@@ -42,6 +42,9 @@
               "minItems": 1,
               "items": { "$ref": "#/$defs/check" }
             },
+            "report_revision": { "type": "integer", "minimum": 1 },
+            "report_digest": { "$ref": "#/$defs/digest" },
+            "subject_head": { "$ref": "#/$defs/nonEmpty" },
             "validated_at": { "type": "string", "format": "date-time" }
           }
         }

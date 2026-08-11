@@ -44,6 +44,9 @@ in this task.
    durable report revisions. Never exceed the per-turn snapshot-call limit.
    The `PreToolUse` gate must block write/dispatch/integration actions until
    entry coverage exists and invalidate an early Pre-final after later writes.
+   Treat `needs_attention` and `PermissionRequest` as nonterminal approval
+   Attention. Keep native Crew approval visible, surface only the redacted
+   request once in this Captain turn, and never invent or auto-grant authority.
 7. Assign evidence-producing checks to a bounded Validator Crew, then review
    scope, diff findings, subject HEAD, proportional tests, secrets statement,
    runtime state, and side effects. Distinguish worker-reported checks from
@@ -70,7 +73,8 @@ in this task.
     full sweep and do not claim real-time synchronization.
 
 Use `{project_map}`, `{state_store}`, and the verified adapter at `{adapter}`.
-Perform lifecycle mutations through `node {plugin_root}/bin/coordlane.mjs`;
+Perform lifecycle mutations through the exact current Node executable and real
+`{plugin_root}/bin/coordlane.mjs` path;
 never fabricate preflight or acknowledgement booleans with ad-hoc scripts.
 This operator exception changes coordination state only and does not permit
 project execution. The Captain availability Hook denies direct edits,

@@ -14,7 +14,7 @@
     "coordinator_checks", "integration", "created_at", "updated_at"
   ],
   "properties": {
-    "schema_version": { "const": "1.0.0" },
+    "schema_version": { "const": "1.1.0" },
     "project_id": { "$ref": "#/$defs/id" },
     "assignment_id": { "$ref": "#/$defs/id" },
     "parent_decision_id": { "$ref": "#/$defs/id" },
@@ -115,11 +115,15 @@
     "integration": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["strategy", "source_commit", "integrated_commit", "integrated_at"],
+      "required": ["strategy", "decision_id", "target_branch", "source_commit", "integrated_commit", "report_revision", "report_digest", "integrated_at"],
       "properties": {
         "strategy": { "enum": ["cherry-pick", "merge"] },
+        "decision_id": { "$ref": "#/$defs/id" },
+        "target_branch": { "$ref": "#/$defs/nonEmpty" },
         "source_commit": { "$ref": "#/$defs/nonEmpty" },
         "integrated_commit": { "$ref": "#/$defs/nonEmpty" },
+        "report_revision": { "type": "integer", "minimum": 1 },
+        "report_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
         "integrated_at": { "type": "string", "format": "date-time" }
       }
     }

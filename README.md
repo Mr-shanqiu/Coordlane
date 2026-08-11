@@ -43,6 +43,9 @@ Its core advantage is the combination of these reliability boundaries:
 - **Two active-turn completeness gates.** Registry-wide Turn-entry and Pre-final
   zero-time sweeps recover changed Crew state even when a wake hint is missing;
   the finalizer fails closed on stale or unknown freshness.
+- **Visible approval attention.** Codex `PermissionRequest` is recorded as a
+  redacted nonterminal signal and surfaced by the Captain while the native Crew
+  approval remains visible; Coordlane does not silently deny or auto-approve.
 - **Evidence before integration.** A separate Validator produces independent
   evidence and one authorized Dock Crew is the only integration writer.
 - **Reliability without recurring quota spend.** Coordlane has no heartbeat,

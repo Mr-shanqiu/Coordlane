@@ -20,6 +20,7 @@ current-host evidence and must be rechecked after host changes.
 | `dispatch_assignment` | `send_message_to_thread` with exact `assignment_id` | Successful call is delivery only |
 | `read_worker` | `read_thread(threadId, hostId)` | Verify latest user message, assistant scope/start, origin, and active turn |
 | `wait_worker` | `wait_threads` | Returns the first change at a completed/needs-attention target; not a full sweep |
+| `observe_attention` | `PermissionRequest` Hook plus `needs_attention` snapshots | Persist a redacted nonterminal request; retain native approval UI |
 | `persist_report` | Worker final task record and, when configured, the shared Coordlane report store | Terminal state must be complete before consumption |
 | `emit_event` | Local digest-bound event after a durable report | Required before the Crew can stop |
 | `deliver_notification` | `send_message_to_thread` once with the pure `worker_id` | Transport hint; never report truth |
@@ -36,12 +37,20 @@ verified dispatch reads Git cleanliness and branch itself; its acknowledgement
 command evaluates a supplied current task snapshot; and its terminal command
 persists the report plus event in one locked producer operation.
 
+The local store schema is `1.1.0`. Opening a `1.0.0` store from Coordlane
+0.3.2 runs the bundled locked compatibility migration before status, sweep, or
+mutation. Only that project-led migration may consume legacy records. Normal
+reads validate all state record families, so a mixed, missing, unknown, or
+future child version fails closed before status, sweep, or Hook processing.
+
 ## Captain availability invariant
 
 The bound Captain task is a non-blocking control plane. `PreToolUse` denies
 direct file edits, interactive terminal writes, and general `Bash` or
 `exec_command` use even after Turn-entry passes. It allowlists task coordination
-and one shell-control-free invocation of `bin/coordlane.mjs`. The operator may
+and one shell-control-free invocation of the exact real paths of the current
+Node executable and bundled `bin/coordlane.mjs`. Copied scripts and Node
+wrappers are rejected. The operator may
 record reviewed validation and integration evidence, but the Captain cannot run
 the underlying tests or Git integration.
 
@@ -117,6 +126,20 @@ requires entry coverage for permitted control-plane actions. A covered operator
 mutation after an early Pre-final invalidates that phase so it cannot be reused
 at finalization.
 
+## Approval attention
+
+Coordlane 0.3.3 observes `PermissionRequest` without returning allow or deny.
+The native Codex approval remains visible in the Crew task. The Hook stores no
+raw command or tool arguments: only stable identity, active Assignment,
+redacted reason, tool kind, and a digest. A pending request remains orthogonal
+to the `running` Assignment, appears in `pending_attention_count`, and must be
+surfaced once during the active Captain turn before finalization.
+
+This is not a cross-task approve button. There is no model auto-review,
+heartbeat, retry loop, or hidden denial. If state routing is missing, Coordlane
+leaves native approval behavior unchanged. Exact single-use preauthorization
+is deferred until a separately reviewed authority model exists.
+
 At user-turn entry, invalidate `final_gate_passed`. Immediately before final,
 run the registry-wide sweep even for an unrelated question. A wrapper or host
 finalizer must call the reference `preFinalGate`/`assertFinalizable` equivalent;
@@ -140,8 +163,9 @@ The Crew producer order is:
 4. let `PostToolUse` record a structured transport-issued delivery receipt; and
 5. let `Stop` verify the evidence before final output.
 
-If the Crew omitted a step, `Stop` creates one continuation prompt. A second
-unconfirmed attempt records `delivery_degraded_at` and permits the Crew to stop
+If the Crew omitted a step, `Stop` creates one continuation prompt. The first
+send is the only attempt; an unconfirmed response records
+`delivery_degraded_at` and permits the Crew to stop
 without looping forever; the pending durable event remains discoverable by the
 Captain's next full sweep. Never insert raw Crew reports into the Captain's user
 conversation.
@@ -166,8 +190,12 @@ reviews and trusts their exact definitions.
 
 For Git projects, initialize state once with `init-repo`. The store lives under
 the Git common directory, so linked worktrees share it without copying an
-ignored workspace folder. The filesystem remains a same-user trust boundary,
-not protection against a hostile process running as that user.
+ignored workspace folder. The filesystem and CLI remain a same-user trust
+boundary, not protection against a hostile process running as that user. Hook
+role checks prevent a registered Crew from accidentally invoking Captain-only
+operator actions, but they are not cryptographic authorization. Multi-file
+JSON transitions use a store lock and atomic files, but they are not a
+crash-atomic database transaction.
 
 ## Evidence
 

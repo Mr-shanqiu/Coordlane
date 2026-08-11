@@ -77,6 +77,10 @@ terminal writes, and general shell commands even after Turn-entry passes.
    creation are one locked producer action. It rejects files outside ownership,
    forbidden/shared paths, mismatched workspace/branch/HEAD, and unauthorized
    external side effects.
+   Treat host `needs_attention` and `PermissionRequest` as nonterminal
+   Attention. Keep the Assignment `running`, retain the native approval UI,
+   store no raw tool input, and surface the redacted request once in the active
+   Captain turn. Do not auto-approve or hide an unacknowledged request.
 9. **Validate independently.** Assign evidence-producing checks to a bounded
    Validator Crew. Review its subject HEAD, scope, diff findings, proportional
    test results, overlap, secrets, runtime state, and side effects, then accept,
@@ -110,7 +114,8 @@ bounded Pre-final snapshot is required.
 ## Use the local operator
 
 Resolve the plugin root as the directory two levels above this `SKILL.md`, then
-run `node <plugin-root>/bin/coordlane.mjs`. The supported commands are
+run the exact current Node executable and real plugin operator path:
+`<process.execPath> <plugin-root>/bin/coordlane.mjs`. The supported commands are
 `create-worker`, `create-assignment`, `dispatch`, `record-delivery`,
 `acknowledge`, `start`, `terminal`, `sweep`, `validate`, `integrate`, `close`,
 `archive`, and `status`. Each command takes the state directory and an optional
@@ -144,14 +149,17 @@ Before a Crew returns final, require this producer order:
 
 The message is only a wake hint. The durable report/event ledger remains truth.
 If a required step is absent, let `Stop` request one continuation. Do not loop
-indefinitely: after one unconfirmed delivery attempt, record degraded delivery,
+or retry: after one unconfirmed delivery attempt, record degraded delivery,
 leave the event pending, and stop. The Captain recovers it during the next full
 sweep. Never create recurring heartbeat automations.
 
 ## Enforce state boundaries
 
 - Assignment: `draft -> dispatched -> delivered -> acknowledged -> running ->
-  terminal -> validated -> integrated or revision/rejection -> closed`.
+  completed -> validated -> integrated or revision/rejection -> closed`.
+- `blocked` and `decision_needed` may enter revision or rejection, never
+  validation or integration.
+- Attention: `none -> pending -> resolved`, orthogonal to Assignment state.
 - Report: `building -> durable -> notified/discovered -> consumed -> validated
   -> archived`.
 - Notification: `pending -> delivered -> acknowledged`.

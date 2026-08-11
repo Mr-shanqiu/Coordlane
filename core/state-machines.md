@@ -7,7 +7,8 @@ State transitions are evidence gates, not labels inferred from chat activity.
 ```text
 draft -> dispatched -> delivered -> acknowledged -> running
 running -> completed | blocked | decision_needed | failed | superseded
-completed | blocked | decision_needed -> validated | revision_requested | rejected
+completed -> validated | revision_requested | rejected
+blocked | decision_needed -> revision_requested | rejected
 failed -> revision_requested | rejected | closed
 validated -> integrated | revision_requested | rejected | closed
 integrated | rejected | superseded -> closed
@@ -16,8 +17,8 @@ revision_requested -> running | superseded
 
 `delivered` is not `acknowledged`. `completed` applies only to the assigned
 scope. `validated` means independent evidence passed Captain review.
-`integrated` must record both
-the worker source commit and integrated commit. `closed` requires ownership
+`integrated` must record both the worker source commit and integrated commit,
+bound to the accepted report revision and digest. `closed` requires ownership
 release evidence.
 
 Illegal transitions include:
@@ -27,6 +28,7 @@ Illegal transitions include:
 - a commentary or in-progress turn producing a terminal event;
 - running when ownership, dependency, or runtime preflight failed;
 - terminal state without a durable report revision;
+- accepting `blocked` or `decision_needed` as validated work;
 - integration execution before Captain authorization and Validator evidence;
 - release before commit disposition, workspace, verification, overlap,
   no-more-edits, runtime, and Captain-reviewed evidence all pass.
@@ -56,6 +58,21 @@ consumption. Acknowledgement is written only after the matching durable report
 passed digest verification and was consumed. The idempotency key is
 `worker_id + assignment_id + report_revision`.
 
+## Attention
+
+Attention is orthogonal to Assignment state:
+
+```text
+none -> pending -> resolved
+```
+
+A `PermissionRequest` leaves the Assignment `running`. The Codex Hook stores
+only stable routing fields, a redacted reason, and a request digest; it neither
+creates a terminal report nor approves the operation. The native approval UI
+remains visible. The Captain must surface a pending item once in its current
+turn before finalizing, but a surfaced item does not make the Captain
+unresponsive.
+
 ## Crew terminal gate
 
 ```text
@@ -64,9 +81,9 @@ report durable -> event pending -> one-shot wake attempted
 ```
 
 The plugin `Stop` Hook grants one continuation when evidence is missing. It
-must not loop forever. A second unconfirmed transport attempt records
-`delivery_degraded_at`; the durable event remains pending for the Captain's
-next full sweep.
+must not loop forever. The first transport attempt is the only attempt; an
+unconfirmed result records `delivery_degraded_at`, and the durable event
+remains pending for the Captain's next full sweep.
 
 ## Supersession and invalidation
 

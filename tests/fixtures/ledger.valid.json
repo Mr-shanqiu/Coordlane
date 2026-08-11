@@ -1,11 +1,12 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "project_id": "fictional-library",
   "event_sequence": 1,
   "freshness": "fresh",
   "last_sweep_at": "2026-08-09T00:01:00.000Z",
   "last_sweep_cursor": 1,
   "unread_terminal_count": 0,
+  "pending_attention_count": 0,
   "final_gate_passed": true,
   "turn_gate": {
     "turn_id": "turn-01",
@@ -40,7 +41,8 @@
       "last_validated_revision": 0,
       "active_assignment_id": "assign-search-01",
       "origin": "coordinator",
-      "consumed_event_ids": ["event-01"]
+      "consumed_event_ids": ["event-01"],
+      "attention": null
     }
   ]
 }

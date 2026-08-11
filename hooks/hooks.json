@@ -1,5 +1,5 @@
 {
-  "description": "Keep the Captain responsive and enforce Coordlane scan, terminal report, and one-shot notification gates.",
+  "description": "Keep the Captain responsive and enforce Coordlane scan, approval-attention, terminal report, and one-shot notification gates.",
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -15,13 +15,26 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "^(Bash|exec_command|apply_patch|create_thread|send_message_to_thread|set_thread_archived|write_stdin)$",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
             "command": "node \"$PLUGIN_ROOT/hooks/coordlane-hook.mjs\"",
             "timeout": 5,
             "statusMessage": "Checking Coordlane Captain availability and turn-entry gates"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$PLUGIN_ROOT/hooks/coordlane-hook.mjs\"",
+            "timeout": 5,
+            "statusMessage": "Recording Coordlane approval attention"
           }
         ]
       }

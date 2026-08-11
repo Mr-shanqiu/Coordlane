@@ -7,6 +7,7 @@ const requiredOperations = [
   "dispatch_assignment",
   "read_worker",
   "wait_worker",
+  "observe_attention",
   "persist_report",
   "emit_event",
   "deliver_notification",
@@ -26,6 +27,7 @@ assert.equal(manifest.completion_observer, "reviewed_stop_hook_not_live_verified
 assert.deepEqual(Object.keys(manifest.operations), requiredOperations);
 assert.equal(manifest.operations.dispatch_assignment.status, "available_delivery_only");
 assert.equal(manifest.operations.wait_worker.status, "available_first_change_only");
+assert.equal(manifest.operations.observe_attention.status, "observe_only_native_prompt_retained");
 assert.equal(manifest.operations.emit_event.status, "required_before_stop");
 assert.equal(manifest.operations.deliver_notification.status, "one_shot_stop_gated");
 assert.equal(manifest.operations.enforce_terminal_gate.status, "implemented_requires_trust");
@@ -44,6 +46,9 @@ assert.equal(manifest.invariants.snapshot_call_limit_enforced, true);
 assert.equal(manifest.invariants.captain_non_blocking_control_plane, true);
 assert.equal(manifest.invariants.captain_direct_project_work, false);
 assert.equal(manifest.invariants.captain_general_shell, false);
+assert.equal(manifest.invariants.permission_auto_approval, false);
+assert.equal(manifest.invariants.approval_attention_is_terminal, false);
+assert.equal(manifest.invariants.operator_path_identity, "exact_realpath");
 assert.equal(manifest.invariants.validator_and_dock_are_crew, true);
 assert.equal(manifest.invariants.shared_worktree_state, "git_common_directory");
 assert.equal(manifest.invariants.standalone_skill_install, false);
@@ -59,6 +64,9 @@ for (const term of [
   "timeoutMs=0",
   "first change",
   "full sweep",
+  "PermissionRequest",
+  "pending_attention_count",
+  "not a cross-task approve button",
   "`Stop` Hook",
   "PostToolUse",
   "Captain availability invariant",
@@ -80,6 +88,7 @@ const hooks = JSON.parse(fs.readFileSync("hooks/hooks.json", "utf8"));
 assert.ok(hooks.hooks.Stop);
 assert.ok(hooks.hooks.PreToolUse);
 assert.ok(hooks.hooks.PostToolUse);
+assert.ok(hooks.hooks.PermissionRequest);
 assert.match(hooks.hooks.PostToolUse[0].matcher, /wait_threads/);
 assert.ok(hooks.hooks.UserPromptSubmit);
 

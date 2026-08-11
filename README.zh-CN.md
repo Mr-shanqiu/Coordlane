@@ -35,6 +35,9 @@ Coordlane 有意保持比 Agent IDE、自治 Swarm 或通用软件开发方法�
 - **两道 active-turn 完整性门禁。** 回合开始与回复前都对全 registry 做零等待
   扫描；即使唤醒提示丢失，也能恢复发生变化的 Crew 状态，状态陈旧或未知时
   finalizer 会失败关闭。
+- **审批不会被静默隐藏。** Codex `PermissionRequest` 只记录为脱敏的非终态
+  Attention，并由 Captain 提示用户；Crew 原生批准窗口继续保留，Coordlane
+  不会静默拒绝或自动批准。
 - **先有证据，再合流。** 独立 Validator 产出复验证据，只有一个得到授权的
   Dock Crew 可以写入合流结果。
 - **不靠持续消耗额度换可靠性。** Coordlane 没有心跳、daemon、重试轮询或后台

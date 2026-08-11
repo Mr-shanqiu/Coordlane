@@ -21,12 +21,24 @@ Last audited: 2026-08-11
   `Stop` terminal gate, strict structured cursor-bound
   `PostToolUse(wait_threads)` attestations, strict delivery receipts, bounded
   degraded-delivery fallback, and Hook regression tests.
-- A Captain availability allowlist that blocks direct edits, interactive
+- An observe-only `PermissionRequest` path records redacted nonterminal
+  Attention, retains native Codex approval, and requires the Captain to surface
+  pending requests once per active turn. It does not auto-approve.
+- A Captain availability allowlist that blocks all non-allowlisted tool names,
+  direct edits, interactive
   terminal writes, and general shell commands in the bound Captain task while
-  permitting task coordination and exact local operator state transitions.
+  permitting task coordination and exact-realpath local operator state
+  transitions. Registered Crew operator calls cannot record Captain-only
+  validation, integration, close, or archive actions through the Hook.
   Validator and Dock execution remain bounded Crew responsibilities.
 - Shared Git-common-directory state for linked worktrees, mode-0700 directories,
   bounded cross-process mutation locking, and interrupted-write recovery.
+- Store schema `1.1.0` plus a tested, locked `1.0.0` compatibility migration.
+  It rewrites records atomically, recomputes report/event digest bindings, and
+  writes the project version last so an interrupted migration can resume.
+  Normal reads require every project, registry, ledger, ownership, assignment,
+  report, and event record to be `1.1.0`; mixed, missing, unknown, or future
+  child versions fail closed before status, sweep, or Hook processing.
 - Assignment and Workstream contracts contain no mandatory task token, CPU,
   network, or external-call quotas. The only enforced call limit bounds
   Coordlane's own live-snapshot overhead.
@@ -69,6 +81,13 @@ Last audited: 2026-08-11
 - The Hook can deny known project-execution tool paths, but it is not a general
   operating-system security boundary. Newly introduced host tool names require
   an adapter and matcher update before they are claimed as covered.
+- The CLI and local state share the user's operating-system identity. Hook role
+  checks prevent accidental authority crossover; they do not cryptographically
+  stop a hostile same-user process from editing state or invoking the CLI.
+- Individual files are atomic and the store is mutation-locked, but compound
+  transitions across assignment, ownership, registry, report, event, and
+  ledger files are not crash-atomic transactions. SQLite or a write-ahead
+  journal remains future hardening.
 
 ## Evidence boundary
 

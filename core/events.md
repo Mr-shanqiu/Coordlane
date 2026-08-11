@@ -49,3 +49,12 @@ While the Captain sleeps, the durable ledger—not notification transport—is
 truth. The one-shot terminal message wakes the Captain when transport works.
 When transport is unavailable, the pending event is recovered at the next
 Captain turn. Coordlane does not run scheduled heartbeat polling.
+
+## Approval attention is not a terminal event
+
+Codex `PermissionRequest` observations are stored in the worker ledger as
+nonterminal Attention. They never enter the terminal event stream and never
+carry raw tool input. Turn-entry and Pre-final snapshots may confirm
+`needs_attention`; the Captain surfaces a redacted request once per active
+turn. Coordlane 0.3.3 is observe-only: it does not auto-approve, hide, or
+replace the native Codex approval prompt.

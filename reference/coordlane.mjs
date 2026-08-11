@@ -7,7 +7,8 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { gitSharedStateRoot, pluginProjectStateRoot } from "./state-root.mjs";
 
-export const SCHEMA_VERSION = "1.0.0";
+export const SCHEMA_VERSION = "1.1.0";
+const LEGACY_SCHEMA_VERSION = "1.0.0";
 
 export const ASSIGNMENT_TRANSITIONS = Object.freeze({
   draft: ["dispatched", "superseded"],
@@ -16,8 +17,8 @@ export const ASSIGNMENT_TRANSITIONS = Object.freeze({
   acknowledged: ["running", "failed", "superseded"],
   running: ["completed", "blocked", "decision_needed", "failed", "superseded"],
   completed: ["validated", "revision_requested", "rejected"],
-  blocked: ["validated", "revision_requested", "rejected"],
-  decision_needed: ["validated", "revision_requested", "rejected"],
+  blocked: ["revision_requested", "rejected"],
+  decision_needed: ["revision_requested", "rejected"],
   failed: ["revision_requested", "rejected", "closed"],
   superseded: ["closed"],
   validated: ["integrated", "revision_requested", "rejected", "closed"],
@@ -149,9 +150,148 @@ const storePaths = (root) => ({
   events: path.join(root, "events")
 });
 
+const rawJsonFiles = (directory) => {
+  if (!fs.existsSync(directory)) return [];
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const candidate = path.join(directory, entry.name);
+    return entry.isDirectory()
+      ? rawJsonFiles(candidate)
+      : (entry.name.endsWith(".json") ? [candidate] : []);
+  }).sort();
+};
+
+const assertKnownSchemaVersion = (record, label) => {
+  if (![LEGACY_SCHEMA_VERSION, SCHEMA_VERSION].includes(record?.schema_version)) {
+    throw new Error(`Unsupported future or unknown Coordlane schema_version for ${label}: ${record?.schema_version ?? "missing"}`);
+  }
+};
+
+const assertCurrentSchemaVersion = (record, label) => {
+  if (record?.schema_version !== SCHEMA_VERSION) {
+    throw new Error(
+      `Unsupported future or unknown Coordlane schema_version for ${label}: ` +
+      `${record?.schema_version ?? "missing"}; expected ${SCHEMA_VERSION}`
+    );
+  }
+};
+
+const assertCurrentStoreStateVersions = (paths) => {
+  for (const [label, filePath] of [
+    ["project", paths.project],
+    ["registry", paths.registry],
+    ["ledger", paths.ledger],
+    ["ownership", paths.ownership]
+  ]) {
+    assertCurrentSchemaVersion(readJson(filePath), label);
+  }
+  for (const [label, directory] of [
+    ["assignment", paths.assignments],
+    ["report", paths.reports],
+    ["event", paths.events]
+  ]) {
+    for (const filePath of rawJsonFiles(directory)) {
+      assertCurrentSchemaVersion(readJson(filePath), `${label} ${filePath}`);
+    }
+  }
+};
+
+const migrateStoreUnlocked = (root) => {
+  const paths = storePaths(root);
+  const project = readJson(paths.project);
+  assertKnownSchemaVersion(project, "project");
+  if (project.schema_version === SCHEMA_VERSION) return false;
+
+  const reportDigests = new Map();
+  for (const filePath of rawJsonFiles(paths.reports)) {
+    const report = readJson(filePath);
+    assertKnownSchemaVersion(report, `report ${filePath}`);
+    report.schema_version = SCHEMA_VERSION;
+    if (report.coordinator_validation) {
+      report.coordinator_validation.report_revision ??= report.report_revision;
+      report.coordinator_validation.subject_head ??= report.content?.workspace?.head;
+    }
+    const immutable = {
+      schema_version: report.schema_version,
+      project_id: report.project_id,
+      worker_id: report.worker_id,
+      assignment_id: report.assignment_id,
+      attempt_id: report.attempt_id,
+      ownership_epoch: report.ownership_epoch,
+      report_revision: report.report_revision,
+      content: report.content
+    };
+    report.report_digest = sha256(immutable);
+    if (report.coordinator_validation) {
+      report.coordinator_validation.report_digest = report.report_digest;
+    }
+    reportDigests.set(`${report.worker_id}:${report.assignment_id}:${report.report_revision}`, report.report_digest);
+    atomicWriteJson(filePath, report);
+  }
+
+  for (const filePath of rawJsonFiles(paths.assignments)) {
+    const assignment = readJson(filePath);
+    assertKnownSchemaVersion(assignment, `assignment ${filePath}`);
+    assignment.schema_version = SCHEMA_VERSION;
+    if (assignment.integration) {
+      const revision = assignment.integration.report_revision ??
+        assignment.integration.validated_report_revision ?? assignment.worker_report_revision;
+      const digest = reportDigests.get(`${assignment.worker_id}:${assignment.assignment_id}:${revision}`);
+      if (!digest) throw new Error(`Cannot migrate integrated assignment without its durable report: ${assignment.assignment_id}`);
+      assignment.integration.decision_id ??= assignment.parent_decision_id;
+      assignment.integration.target_branch ??= "legacy-unrecorded";
+      assignment.integration.report_revision = revision;
+      assignment.integration.report_digest = digest;
+      delete assignment.integration.validated_report_revision;
+      delete assignment.integration.validated_report_digest;
+    }
+    atomicWriteJson(filePath, assignment);
+  }
+
+  for (const filePath of rawJsonFiles(paths.events)) {
+    const event = readJson(filePath);
+    assertKnownSchemaVersion(event, `event ${filePath}`);
+    const digest = reportDigests.get(`${event.worker_id}:${event.assignment_id}:${event.report_revision}`);
+    if (!digest) throw new Error(`Cannot migrate event without its durable report: ${event.event_id}`);
+    event.schema_version = SCHEMA_VERSION;
+    event.report_digest = digest;
+    event.delivery_attempted_at ??= event.delivery_attempts > 0
+      ? (event.delivered_at ?? event.delivery_degraded_at ?? event.created_at)
+      : null;
+    atomicWriteJson(filePath, event);
+  }
+
+  for (const [label, filePath] of [["registry", paths.registry], ["ownership", paths.ownership]]) {
+    const record = readJson(filePath);
+    assertKnownSchemaVersion(record, label);
+    record.schema_version = SCHEMA_VERSION;
+    atomicWriteJson(filePath, record);
+  }
+
+  const ledger = readJson(paths.ledger);
+  assertKnownSchemaVersion(ledger, "ledger");
+  ledger.schema_version = SCHEMA_VERSION;
+  for (const entry of ledger.workers ?? []) entry.attention ??= null;
+  ledger.pending_attention_count = (ledger.workers ?? [])
+    .filter((entry) => entry.attention?.state === "pending").length;
+  atomicWriteJson(paths.ledger, ledger);
+
+  project.schema_version = SCHEMA_VERSION;
+  project.updated_at = now();
+  atomicWriteJson(paths.project, project);
+  return true;
+};
+
 const requireStore = (root) => {
   const paths = storePaths(root);
   if (!fs.existsSync(paths.project)) throw new Error(`Coordlane store not initialized: ${root}`);
+  const project = readJson(paths.project);
+  assertKnownSchemaVersion(project, "project");
+  if (project.schema_version === LEGACY_SCHEMA_VERSION) {
+    withStoreLock(root, () => migrateStoreUnlocked(root));
+  }
+  // Only the project-led migration may consume legacy records. Normal state
+  // reads reject mixed, missing, future, or unknown child record versions.
+  assertCurrentStoreStateVersions(paths);
   return paths;
 };
 
@@ -186,6 +326,7 @@ export const initProject = (root, projectId, options = {}) => withStoreLock(root
     last_sweep_at: null,
     last_sweep_cursor: 0,
     unread_terminal_count: 0,
+    pending_attention_count: 0,
     final_gate_passed: false,
     turn_gate: null,
     workers: []
@@ -228,8 +369,11 @@ export const bindCaptain = (root, input) => withStoreLock(root, () => {
   return project;
 });
 
-export const isCaptainSession = (root, sessionId) =>
-  projectFor(root).captain_thread_id === sessionId;
+export const isCaptainSession = (root, sessionId, hostId = null) => {
+  const project = projectFor(root);
+  return project.captain_thread_id === sessionId &&
+    (hostId === null || hostId === undefined || project.captain_host_id === hostId);
+};
 
 const workerLedger = (ledger, workerId) => {
   let entry = ledger.workers.find((item) => item.worker_id === workerId);
@@ -242,11 +386,22 @@ const workerLedger = (ledger, workerId) => {
       last_validated_revision: 0,
       active_assignment_id: null,
       origin: "coordinator",
-      consumed_event_ids: []
+      consumed_event_ids: [],
+      attention: null
     };
     ledger.workers.push(entry);
   }
+  if (!("attention" in entry)) entry.attention = null;
   return entry;
+};
+
+const pendingAttentions = (ledger) => ledger.workers
+  .map((entry) => entry.attention)
+  .filter((attention) => attention?.state === "pending");
+
+const updateAttentionCount = (ledger) => {
+  ledger.pending_attention_count = pendingAttentions(ledger).length;
+  return ledger.pending_attention_count;
 };
 
 const updateWorker = (root, workerId, updater) => {
@@ -802,6 +957,7 @@ const invalidateFinalGate = (root, requestedFreshness = "stale") => {
   const paths = requireStore(root);
   const ledger = readJson(paths.ledger);
   ledger.unread_terminal_count = countUnreadTerminal(root, ledger);
+  updateAttentionCount(ledger);
   ledger.final_gate_passed = false;
   ledger.freshness = requestedFreshness;
   atomicWriteJson(paths.ledger, ledger);
@@ -825,6 +981,7 @@ export const beginTurn = (root, input = {}) => withStoreLock(root, () => {
     host_id: worker.host_id
   }));
   ledger.unread_terminal_count = countUnreadTerminal(root, ledger);
+  updateAttentionCount(ledger);
   ledger.final_gate_passed = false;
   ledger.freshness = "stale";
   ledger.turn_gate = {
@@ -852,6 +1009,120 @@ export const activeSweepTargets = (root) => activeMonitoredWorkers(root).map((wo
   after_cursor: worker.status_cursor
 }));
 
+const sanitizeAttentionReason = (value) => {
+  const text = typeof value === "string" && value.trim() ? value.trim() : "Codex approval is required";
+  return text
+    .replace(/(sk|pk|api[_-]?key|token|secret|password|credential)\s*[=:]\s*(?:"[^"]*"|'[^']*'|\S+)/gi, "$1=[redacted]")
+    .replace(/\b(bearer)\s+(?:"[^"]*"|'[^']*'|\S+)/gi, "$1 [redacted]")
+    .replace(/[\r\n\t]+/g, " ")
+    .slice(0, 240);
+};
+
+const workerForSession = (root, sessionId, hostId = null) => {
+  const matches = monitoredWorkers(root).filter((worker) => worker.thread_id === sessionId);
+  if (hostId !== null && hostId !== undefined) {
+    return matches.find((worker) => worker.host_id === hostId) ?? null;
+  }
+  return matches.length === 1 ? matches[0] : null;
+};
+
+const recordAttentionUnlocked = (root, input) => {
+  const paths = requireStore(root);
+  const worker = readWorker(root, input.worker_id);
+  if (!worker || worker.archived || worker.monitored === false) {
+    throw new Error(`Worker is unavailable: ${input.worker_id}`);
+  }
+  const assignmentId = worker.active_assignment_id;
+  const assignment = assignmentId ? readAssignment(root, assignmentId) : null;
+  if (!assignment || assignment.status !== "running") {
+    return { recorded: false, reason: "worker_has_no_running_assignment" };
+  }
+  const ledger = readJson(paths.ledger);
+  const entry = workerLedger(ledger, worker.worker_id);
+  const requestDigest = input.request_digest ?? sha256(input.tool_shape ? {
+    worker_id: worker.worker_id,
+    assignment_id: assignment.assignment_id,
+    turn_id: input.turn_id ?? null,
+    tool_name: input.tool_name ?? "unknown",
+    tool_shape: input.tool_shape
+  } : {
+    nonce: crypto.randomUUID(),
+    worker_id: worker.worker_id,
+    assignment_id: assignment.assignment_id
+  });
+  const existing = entry.attention;
+  if (existing?.state === "pending" && existing.request_digest === requestDigest) {
+    return { recorded: false, duplicate: true, attention: existing };
+  }
+  entry.attention = {
+    attention_id: input.attention_id ?? crypto.randomUUID(),
+    kind: "approval_required",
+    state: "pending",
+    worker_id: worker.worker_id,
+    assignment_id: assignment.assignment_id,
+    attempt_id: assignment.attempt_id,
+    thread_id: worker.thread_id,
+    host_id: worker.host_id,
+    turn_id: input.turn_id ?? null,
+    tool_name: input.tool_name ?? "unknown",
+    sanitized_reason: sanitizeAttentionReason(input.description),
+    request_digest: requestDigest,
+    detected_at: now(),
+    surfaced_turn_id: null,
+    resolved_at: null
+  };
+  updateAttentionCount(ledger);
+  ledger.final_gate_passed = false;
+  ledger.freshness = "stale";
+  atomicWriteJson(paths.ledger, ledger);
+  return { recorded: true, attention: entry.attention };
+};
+
+export const recordPermissionAttention = (root, sessionId, hostId, input = {}) =>
+  withStoreLock(root, () => {
+    const worker = workerForSession(root, sessionId, hostId);
+    if (!worker) return { recorded: false, reason: "unbound_or_ambiguous_worker" };
+    return recordAttentionUnlocked(root, { ...input, worker_id: worker.worker_id });
+  });
+
+export const resolveWorkerAttention = (root, workerId, input = {}) => withStoreLock(root, () => {
+  const paths = requireStore(root);
+  const ledger = readJson(paths.ledger);
+  const entry = workerLedger(ledger, workerId);
+  if (entry.attention?.state !== "pending") return { resolved: false, attention: entry.attention };
+  if (input.request_digest && input.request_digest !== entry.attention.request_digest) {
+    throw new Error("Attention digest does not match the pending request");
+  }
+  entry.attention.state = "resolved";
+  entry.attention.resolved_at = now();
+  updateAttentionCount(ledger);
+  atomicWriteJson(paths.ledger, ledger);
+  return { resolved: true, attention: entry.attention };
+});
+
+export const surfacePendingAttention = (root, turnId) => withStoreLock(root, () => {
+  const paths = requireStore(root);
+  const ledger = readJson(paths.ledger);
+  const activeTurnId = turnId ?? ledger.turn_gate?.turn_id;
+  if (!activeTurnId) throw new Error("Cannot surface Attention without an active Captain turn");
+  const surfaced = [];
+  for (const entry of ledger.workers) {
+    if (entry.attention?.state !== "pending" || entry.attention.surfaced_turn_id === activeTurnId) continue;
+    entry.attention.surfaced_turn_id = activeTurnId;
+    surfaced.push({
+      attention_id: entry.attention.attention_id,
+      worker_id: entry.attention.worker_id,
+      assignment_id: entry.attention.assignment_id,
+      tool_name: entry.attention.tool_name,
+      sanitized_reason: entry.attention.sanitized_reason,
+      request_digest: entry.attention.request_digest
+    });
+  }
+  updateAttentionCount(ledger);
+  atomicWriteJson(paths.ledger, ledger);
+  return surfaced;
+});
+
 export const captainEntryGate = (root, turnId) => {
   const ledger = ledgerFor(root);
   const gate = ledger.turn_gate;
@@ -868,6 +1139,9 @@ export const captainEntryGate = (root, turnId) => {
 
 const CAPTAIN_COORDINATION_TOOLS = new Set([
   "create_thread",
+  "list_threads",
+  "read_thread",
+  "wait_threads",
   "send_message_to_thread",
   "set_thread_archived"
 ]);
@@ -884,6 +1158,7 @@ const COORDLANE_OPERATOR_COMMANDS = new Set([
   "record-delivery",
   "acknowledge",
   "start",
+  "terminal",
   "sweep",
   "validate",
   "integrate",
@@ -892,14 +1167,82 @@ const COORDLANE_OPERATOR_COMMANDS = new Set([
   "status"
 ]);
 
-const isCoordlaneOperatorCommand = (toolInput = {}) => {
+const splitSimpleCommand = (command) => {
+  const tokens = [];
+  let token = "";
+  let quote = null;
+  for (let index = 0; index < command.length; index += 1) {
+    const character = command[index];
+    if (quote) {
+      if (character === quote) quote = null;
+      else token += character;
+      continue;
+    }
+    if (character === "\"" || character === "'") {
+      quote = character;
+    } else if (/\s/.test(character)) {
+      if (token) {
+        tokens.push(token);
+        token = "";
+      }
+    } else {
+      token += character;
+    }
+  }
+  if (quote) return null;
+  if (token) tokens.push(token);
+  return tokens;
+};
+
+const comparableExecutable = (value) => {
+  if (typeof value !== "string" || value.length === 0) return null;
+  try {
+    return fs.realpathSync(value);
+  } catch {
+    return path.resolve(value);
+  }
+};
+
+export const coordlaneOperatorOperation = (toolInput = {}, expected = {}) => {
   const command = toolInput.command ?? toolInput.cmd;
-  if (typeof command !== "string" || command.length === 0) return false;
-  if (/(?:&&|\|\||[;&|`()<>\r\n]|\$\()/.test(command)) return false;
-  const match = command.match(
-    /^\s*(?:"[^"]*node(?:\.exe)?"|'[^']*node(?:\.exe)?'|\S*node(?:\.exe)?)\s+(?:"[^"]*\/bin\/coordlane\.mjs"|'[^']*\/bin\/coordlane\.mjs'|\S*\/bin\/coordlane\.mjs)\s+([a-z-]+)\b/
-  );
-  return Boolean(match && COORDLANE_OPERATOR_COMMANDS.has(match[1]));
+  if (typeof command !== "string" || command.length === 0) return null;
+  if (/(?:&&|\|\||[;&|`()<>\r\n]|\$\()/.test(command)) return null;
+  const tokens = splitSimpleCommand(command.trim());
+  if (!tokens || tokens.length < 4 || tokens.length > 5) return null;
+  const [nodePath, operatorPath, operation] = tokens;
+  if (!COORDLANE_OPERATOR_COMMANDS.has(operation)) return null;
+  if (!expected.operator_path || !expected.node_path) return null;
+  if (comparableExecutable(nodePath) !== comparableExecutable(expected.node_path) ||
+    comparableExecutable(operatorPath) !== comparableExecutable(expected.operator_path)) return null;
+  return operation;
+};
+
+export const coordlaneOperatorInvocation = (toolInput = {}, expected = {}) => {
+  const command = toolInput.command ?? toolInput.cmd;
+  const operation = coordlaneOperatorOperation(toolInput, expected);
+  if (!operation) return null;
+  const tokens = splitSimpleCommand(command.trim());
+  return {
+    operation,
+    node_path: tokens[0],
+    operator_path: tokens[1],
+    state_directory: tokens[3],
+    payload_source: tokens[4] ?? null
+  };
+};
+
+export const mentionsCoordlaneOperator = (toolInput = {}) => {
+  const command = toolInput.command ?? toolInput.cmd;
+  return typeof command === "string" && /coordlane\.mjs/i.test(command);
+};
+
+export const targetsCoordlaneOperator = (toolInput = {}, expected = {}) => {
+  if (mentionsCoordlaneOperator(toolInput)) return true;
+  const command = toolInput.command ?? toolInput.cmd;
+  if (typeof command !== "string" || !expected.operator_path) return false;
+  const tokens = splitSimpleCommand(command.trim());
+  if (!tokens || tokens.length < 2) return false;
+  return comparableExecutable(tokens[1]) === comparableExecutable(expected.operator_path);
 };
 
 export const captainAvailabilityPolicy = (input = {}) => {
@@ -911,7 +1254,11 @@ export const captainAvailabilityPolicy = (input = {}) => {
     return { allowed: false, reason: "captain_direct_project_work_forbidden" };
   }
   if (["Bash", "exec_command"].includes(toolName)) {
-    return isCoordlaneOperatorCommand(input.tool_input)
+    const operation = coordlaneOperatorOperation(input.tool_input, {
+      operator_path: input.expected_operator_path,
+      node_path: input.expected_node_path
+    });
+    return operation && operation !== "terminal"
       ? { allowed: true, category: "control_plane_operator" }
       : { allowed: false, reason: "captain_shell_work_forbidden" };
   }
@@ -978,14 +1325,21 @@ export const recordSweepObservation = (root, input) => withStoreLock(root, () =>
   gate.snapshot_calls_used += 1;
   const phase = gate.entry_sweep.completed_at ? gate.pre_final_sweep : gate.entry_sweep;
   const required = new Map(gate.required_workers.map((worker) => [workerAddressKey(worker), worker]));
+  const attentionChanges = [];
   for (const observed of input.observed_workers ?? []) {
     const key = workerAddressKey(observed);
     if (!required.has(key)) continue;
     const registered = registry.workers.find((worker) => workerAddressKey(worker) === key);
     if (!registered) continue;
+    if (typeof observed.changed !== "boolean") continue;
     if (!("cursor" in observed) || observed.cursor === null || observed.cursor === undefined) continue;
     if ((observed.after_cursor ?? null) !== (registered.status_cursor ?? null)) continue;
     registered.status_cursor = observed.cursor;
+    if (observed.changed === true && observed.needs_attention === true) {
+      attentionChanges.push({ worker_id: registered.worker_id, pending: true, observed });
+    } else if (observed.changed === true && observed.needs_attention === false) {
+      attentionChanges.push({ worker_id: registered.worker_id, pending: false, observed });
+    }
     if (!phase.observed_workers.some((worker) => workerAddressKey(worker) === key)) {
       phase.observed_workers.push(required.get(key));
     }
@@ -993,6 +1347,23 @@ export const recordSweepObservation = (root, input) => withStoreLock(root, () =>
   if (phase.observed_workers.length === gate.required_workers.length) phase.completed_at = now();
   atomicWriteJson(paths.registry, registry);
   atomicWriteJson(paths.ledger, ledger);
+  for (const change of attentionChanges) {
+    if (change.pending) {
+      recordAttentionUnlocked(root, {
+        worker_id: change.worker_id,
+        turn_id: input.turn_id,
+        tool_name: "host_approval",
+        description: change.observed.attention_reason ?? "Worker requires user approval",
+        request_digest: sha256({
+          worker_id: change.worker_id,
+          cursor: change.observed.cursor,
+          status: change.observed.status ?? "needs_attention"
+        })
+      });
+    } else {
+      resolveWorkerAttention(root, change.worker_id);
+    }
+  }
   return {
     turn_id: gate.turn_id,
     phase: phase === gate.entry_sweep ? "entry" : "pre_final",
@@ -1081,6 +1452,7 @@ const emitEventUnlocked = (root, input) => {
     requires_user_decision: report.content.status === "decision_needed",
     status: "pending",
     delivery_attempts: 0,
+    delivery_attempted_at: null,
     delivery_id: null,
     delivery_error: null,
     delivery_degraded_at: null,
@@ -1114,7 +1486,11 @@ const recordNotificationDeliveryUnlocked = (root, eventId, input = {}) => {
   const filePath = eventFiles(root).find((candidate) => readJson(candidate).event_id === eventId);
   if (!filePath) throw new Error(`Unknown event_id: ${eventId}`);
   const event = readJson(filePath);
+  if (event.delivery_attempts > 0) {
+    return { delivered: event.status === "delivered" || event.status === "acknowledged", duplicate: true, event };
+  }
   event.delivery_attempts += 1;
+  event.delivery_attempted_at = now();
   if (event.status === "pending") {
     event.status = "delivered";
     event.delivered_at = now();
@@ -1132,12 +1508,15 @@ const recordNotificationFailureUnlocked = (root, eventId, input = {}) => {
   const filePath = eventFiles(root).find((candidate) => readJson(candidate).event_id === eventId);
   if (!filePath) throw new Error(`Unknown event_id: ${eventId}`);
   const event = readJson(filePath);
-  if (event.status !== "pending") return { degraded: false, event };
+  if (event.status !== "pending" || event.delivery_attempts > 0) {
+    return { degraded: Boolean(event.delivery_degraded_at), duplicate: true, event };
+  }
   event.delivery_attempts += 1;
+  event.delivery_attempted_at = now();
   event.delivery_error = input.error ?? "Notification delivery was not confirmed";
-  if (input.degraded === true) event.delivery_degraded_at = now();
+  event.delivery_degraded_at = now();
   atomicWriteJson(filePath, event);
-  return { degraded: input.degraded === true, event };
+  return { degraded: true, event };
 };
 
 export const recordNotificationFailure = (root, eventId, input = {}) =>
@@ -1148,10 +1527,12 @@ export const deliverNotification = (root, eventId, input = {}) =>
   recordNotificationDelivery(root, eventId,
     typeof input === "object" && input !== null ? input : {});
 
-export const terminalGateSnapshot = (root, sessionId) => {
+export const terminalGateSnapshot = (root, sessionId, hostId = null) => {
   const project = projectFor(root);
-  const worker = registryFor(root).workers.find((item) =>
-    item.thread_id === sessionId && item.monitored !== false && !item.archived);
+  const matches = registryFor(root).workers.filter((item) =>
+    item.thread_id === sessionId && item.monitored !== false && !item.archived &&
+    (hostId === null || hostId === undefined || item.host_id === hostId));
+  const worker = matches.length === 1 ? matches[0] : null;
   if (!worker) return { monitored: false };
   const assignmentId = worker.active_assignment_id;
   const assignment = assignmentId ? readAssignment(root, assignmentId) : null;
@@ -1184,7 +1565,7 @@ export const terminalGateSnapshot = (root, sessionId) => {
 };
 
 export const recordSessionNotificationDelivery = (root, sessionId, input = {}) => withStoreLock(root, () => {
-  const gate = terminalGateSnapshot(root, sessionId);
+  const gate = terminalGateSnapshot(root, sessionId, input.host_id);
   if (!gate.monitored || !gate.event_id) return { recorded: false, reason: "no_pending_terminal_event" };
   const result = recordNotificationDelivery(root, gate.event_id, input);
   return { recorded: true, ...result };
@@ -1297,6 +1678,7 @@ const fullSweepUnlocked = (root, options = {}) => {
   ledger.last_sweep_at = now();
   ledger.last_sweep_cursor = highWatermark;
   ledger.unread_terminal_count = countUnreadTerminal(root, ledger);
+  updateAttentionCount(ledger);
   ledger.freshness = ledger.unread_terminal_count === 0 ? "fresh" : "stale";
   atomicWriteJson(paths.ledger, ledger);
   return {
@@ -1319,6 +1701,7 @@ const preFinalGateUnlocked = (root, options = {}) => {
       freshness: ledger.freshness,
       final_gate_passed: false,
       unread_terminal_count: ledger.unread_terminal_count,
+      pending_attention_count: updateAttentionCount(ledger),
       consumed: []
     };
   }
@@ -1327,6 +1710,7 @@ const preFinalGateUnlocked = (root, options = {}) => {
     const paths = requireStore(root);
     const ledger = readJson(paths.ledger);
     ledger.unread_terminal_count = countUnreadTerminal(root, ledger);
+    updateAttentionCount(ledger);
     const turnGateComplete = Boolean(
       ledger.turn_gate?.entry_sweep?.completed_at &&
       ledger.turn_gate?.pre_final_sweep?.completed_at &&
@@ -1347,7 +1731,8 @@ const preFinalGateUnlocked = (root, options = {}) => {
       ...sweep,
       freshness: ledger.freshness,
       final_gate_passed: ledger.final_gate_passed,
-      unread_terminal_count: ledger.unread_terminal_count
+      unread_terminal_count: ledger.unread_terminal_count,
+      pending_attention_count: ledger.pending_attention_count
     };
   } catch (error) {
     const ledger = invalidateFinalGate(root, "unknown");
@@ -1356,6 +1741,7 @@ const preFinalGateUnlocked = (root, options = {}) => {
       freshness: ledger.freshness,
       final_gate_passed: false,
       unread_terminal_count: ledger.unread_terminal_count,
+      pending_attention_count: updateAttentionCount(ledger),
       consumed: [],
       error: error.message
     };
@@ -1369,6 +1755,7 @@ const assertFinalizableUnlocked = (root) => {
   const ledger = ledgerFor(root);
   const monitored = monitoredWorkers(root).length;
   const unread = countUnreadTerminal(root, ledger);
+  const pending = pendingAttentions(ledger);
   const turnGateComplete = Boolean(
     ledger.turn_gate?.entry_sweep?.completed_at &&
     ledger.turn_gate?.pre_final_sweep?.completed_at &&
@@ -1377,6 +1764,8 @@ const assertFinalizableUnlocked = (root) => {
     ledger.turn_gate.registry_revision === registryFor(root).registry_revision
   );
   if (monitored === 0 && unread === 0) return { allowed: true, reason: "no_monitored_workers" };
+  const unsurfaced = pending.filter((attention) =>
+    attention.surfaced_turn_id !== ledger.turn_gate?.turn_id);
   if (!ledger.final_gate_passed || ledger.freshness !== "fresh" ||
     !turnGateComplete || unread !== 0 || ledger.last_sweep_cursor !== ledger.event_sequence) {
     throw new Error(
@@ -1385,12 +1774,16 @@ const assertFinalizableUnlocked = (root) => {
       `unread_terminal_count=${unread}`
     );
   }
+  if (unsurfaced.length > 0) {
+    throw new Error(`Finalization refused: ${unsurfaced.length} pending approval attention item(s) were not surfaced this turn`);
+  }
   return {
     allowed: true,
     freshness: ledger.freshness,
     last_sweep_at: ledger.last_sweep_at,
     last_sweep_cursor: ledger.last_sweep_cursor,
     unread_terminal_count: unread,
+    pending_attention_count: pending.length,
     final_gate_passed: true
   };
 };
@@ -1452,25 +1845,38 @@ export const validateReport = (root, input) => withStoreLock(root, () => {
     report_digest: input.report_digest
   });
   if (report.lifecycle.status !== "consumed") throw new Error("Report must be consumed before validation");
+  const assignment = readAssignment(root, input.assignment_id);
+  if (!assignment || assignment.worker_id !== input.worker_id ||
+    assignment.worker_report_revision !== input.report_revision) {
+    throw new Error("Validation identity does not match the active assignment revision");
+  }
   if (!Array.isArray(input.checks) || input.checks.length === 0 || input.checks.some((check) =>
     !check || typeof check.check !== "string" ||
     !["passed", "failed", "not_run"].includes(check.result) ||
     typeof check.evidence !== "string" ||
-    typeof check.subject_head !== "string")) {
+    typeof check.subject_head !== "string" ||
+    check.subject_head !== report.content.workspace.head)) {
     throw new Error("Captain validation checks are malformed");
   }
   const failed = input.checks.some((check) => check.result !== "passed");
-  const disposition = failed ? (input.on_failure ?? "revision_requested") : "accepted";
+  const terminalNeedsAction = failed || report.content.status !== "completed";
+  const failureDisposition = input.on_failure ?? "revision_requested";
+  if (terminalNeedsAction && !["revision_requested", "rejected"].includes(failureDisposition)) {
+    throw new Error("Failed, not-run, blocked, and decision-needed reports can only request revision or rejection");
+  }
+  const disposition = terminalNeedsAction ? failureDisposition : "accepted";
   const updated = updateReport(root, input.worker_id, input.assignment_id, input.report_revision, (value) => {
     transitionReport(value, "validated");
     value.coordinator_validation = {
       disposition,
       checks: input.checks,
+      report_revision: report.report_revision,
+      report_digest: report.report_digest,
+      subject_head: report.content.workspace.head,
       validated_at: now()
     };
     return value;
   });
-  const assignment = readAssignment(root, input.assignment_id);
   assignment.coordinator_checks = input.checks;
   if (disposition === "accepted") {
     transition(assignment, "validated", ASSIGNMENT_TRANSITIONS, "assignment");
@@ -1494,7 +1900,33 @@ export const validateReport = (root, input) => withStoreLock(root, () => {
 
 export const integrateChange = (root, assignmentId, input) => withStoreLock(root, () => {
   const assignment = readAssignment(root, assignmentId);
+  if (!assignment) throw new Error(`Unknown assignment_id: ${assignmentId}`);
   if (assignment.status !== "validated") throw new Error("Coordinator validation is required before integration");
+  if (!input || typeof input !== "object") throw new Error("Integration evidence is required");
+  for (const key of ["decision_id", "target_branch", "source_commit", "integrated_commit", "report_digest"]) {
+    if (typeof input[key] !== "string" || input[key].trim().length === 0) {
+      throw new Error(`Integration requires ${key}`);
+    }
+  }
+  if (!Number.isInteger(input.report_revision) || input.report_revision < 1) {
+    throw new Error("Integration requires report_revision");
+  }
+  if (input.decision_id !== assignment.parent_decision_id) {
+    throw new Error("Integration decision_id does not match the assignment authority");
+  }
+  const report = readReport(root, assignment.worker_id, assignment.assignment_id, assignment.worker_report_revision);
+  if (!report || report.lifecycle.status !== "validated" ||
+    report.coordinator_validation?.disposition !== "accepted") {
+    throw new Error("Integration requires the accepted validated report revision");
+  }
+  if (input.report_revision !== report.report_revision ||
+    input.report_digest !== report.report_digest) {
+    throw new Error("Integration authorization is not bound to the validated report");
+  }
+  if (input.source_commit !== report.content.commit ||
+    input.source_commit !== report.content.workspace.head) {
+    throw new Error("Integration source commit does not match the validated worker HEAD");
+  }
   if (assignment.branch_policy === "ephemeral-cherry-pick" && input.strategy !== "cherry-pick") {
     throw new Error("Ephemeral branch policy requires cherry-pick integration");
   }
@@ -1512,8 +1944,12 @@ export const integrateChange = (root, assignmentId, input) => withStoreLock(root
   transition(assignment, "integrated", ASSIGNMENT_TRANSITIONS, "assignment");
   assignment.integration = {
     strategy: input.strategy,
+    decision_id: input.decision_id,
+    target_branch: input.target_branch,
     source_commit: input.source_commit,
     integrated_commit: input.integrated_commit,
+    report_revision: report.report_revision,
+    report_digest: report.report_digest,
     integrated_at: now()
   };
   atomicWriteJson(assignmentPath(root, assignmentId), assignment);

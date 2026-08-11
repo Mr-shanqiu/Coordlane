@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "event_id": "event-01",
   "idempotency_key": "20:assign-search-01:1",
   "sequence": 1,
@@ -19,6 +19,7 @@
   "requires_user_decision": false,
   "status": "pending",
   "delivery_attempts": 0,
+  "delivery_attempted_at": null,
   "delivery_id": null,
   "delivery_error": null,
   "delivery_degraded_at": null,

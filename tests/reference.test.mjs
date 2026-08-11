@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 
 import {
+  SCHEMA_VERSION,
   acknowledgeAssignment,
   archiveWorker,
   assertFinalizable,
@@ -34,6 +35,7 @@ import {
   resourcesOverlap,
   resumeRevision,
   startAssignment,
+  statusSnapshot,
   validateReport,
   waitWorker
 } from "../reference/coordlane.mjs";
@@ -41,6 +43,12 @@ import {
 const roots = [];
 const tests = [];
 const test = (name, body) => tests.push({ name, body });
+
+const jsonFiles = (directory) => fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+  const candidate = path.join(directory, entry.name);
+  if (entry.name === ".coordlane.lock") return [];
+  return entry.isDirectory() ? jsonFiles(candidate) : (entry.name.endsWith(".json") ? [candidate] : []);
+});
 
 const makeRoot = () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "coordlane-test-"));
@@ -150,7 +158,7 @@ const consumeAndValidate = (root, report, checks = [captainCheck()]) => {
     assignment_id: report.assignment_id,
     report_revision: report.report_revision,
     report_digest: report.report_digest,
-    checks
+    checks: checks.map((check) => ({ ...check, subject_head: report.content.workspace.head }))
   });
 };
 
@@ -248,10 +256,22 @@ test("08 persistent branch rejects cherry-pick and unsafe divergence", () => {
   notify(root, report);
   consumeAndValidate(root, report);
   assert.throws(() => integrateChange(root, "a08", {
-    strategy: "cherry-pick", source_commit: "source", integrated_commit: "target"
+    strategy: "cherry-pick",
+    decision_id: "decision-a08",
+    target_branch: "main",
+    source_commit: report.content.commit,
+    integrated_commit: "target",
+    report_revision: report.report_revision,
+    report_digest: report.report_digest
   }), /requires merge/);
   assert.throws(() => integrateChange(root, "a08", {
-    strategy: "merge", source_commit: "source", integrated_commit: "target",
+    strategy: "merge",
+    decision_id: "decision-a08",
+    target_branch: "main",
+    source_commit: report.content.commit,
+    integrated_commit: "target",
+    report_revision: report.report_revision,
+    report_digest: report.report_digest,
     diverged: true, patch_equivalent: false, conflicts: false
   }), /patch equivalence/);
 });
@@ -275,6 +295,192 @@ test("10 worker success does not override Captain verification failure", () => {
   const result = consumeAndValidate(root, report, [captainCheck("failed", "exit 1")]);
   assert.equal(result.assignment.status, "revision_requested");
   assert.equal(result.report.coordinator_validation.disposition, "revision_requested");
+});
+
+test("safety: failed validation cannot be overridden to accepted", () => {
+  const root = makeRoot();
+  addWorker(root);
+  start(root, "20", "failed-override");
+  const report = persist(root, "20", "failed-override");
+  notify(root, report);
+  fullSweep(root);
+  assert.throws(() => validateReport(root, {
+    worker_id: report.worker_id,
+    assignment_id: report.assignment_id,
+    report_revision: report.report_revision,
+    report_digest: report.report_digest,
+    on_failure: "accepted",
+    checks: [{ ...captainCheck("failed", "synthetic failure"), subject_head: report.content.workspace.head }]
+  }), /only request revision or rejection/);
+  assert.equal(readAssignment(root, "failed-override").status, "completed");
+});
+
+test("safety: blocked and decision-needed reports cannot be accepted", () => {
+  for (const status of ["blocked", "decision_needed"]) {
+    const root = makeRoot();
+    addWorker(root);
+    start(root, "20", `terminal-${status}`);
+    const report = persist(root, "20", `terminal-${status}`, 1, status);
+    notify(root, report);
+    fullSweep(root);
+    assert.throws(() => validateReport(root, {
+      worker_id: report.worker_id,
+      assignment_id: report.assignment_id,
+      report_revision: report.report_revision,
+      report_digest: report.report_digest,
+      on_failure: "accepted",
+      checks: [{ ...captainCheck(), subject_head: report.content.workspace.head }]
+    }), /only request revision or rejection/);
+  }
+});
+
+test("safety: validation and integration bind the exact report HEAD and digest", () => {
+  const root = makeRoot();
+  addWorker(root);
+  start(root, "20", "binding-01");
+  const report = persist(root, "20", "binding-01");
+  notify(root, report);
+  fullSweep(root);
+  assert.throws(() => validateReport(root, {
+    worker_id: report.worker_id,
+    assignment_id: report.assignment_id,
+    report_revision: report.report_revision,
+    report_digest: report.report_digest,
+    checks: [captainCheck()]
+  }), /malformed/);
+  consumeAndValidate(root, report);
+  assert.throws(() => integrateChange(root, "binding-01", {
+    strategy: "cherry-pick",
+    decision_id: "decision-binding-01",
+    target_branch: "main",
+    source_commit: report.content.commit,
+    report_revision: report.report_revision,
+    report_digest: report.report_digest
+  }), /integrated_commit/);
+  assert.equal(readAssignment(root, "binding-01").status, "validated");
+  assert.throws(() => integrateChange(root, "binding-01", {
+    strategy: "cherry-pick",
+    decision_id: "decision-binding-01",
+    target_branch: "main",
+    source_commit: report.content.commit,
+    integrated_commit: "integrated",
+    report_revision: report.report_revision,
+    report_digest: `sha256:${"0".repeat(64)}`
+  }), /not bound/);
+  assert.equal(readAssignment(root, "binding-01").status, "validated");
+});
+
+test("compatibility: a v0.3.2 schema 1.0.0 store migrates atomically to 1.1.0", () => {
+  const root = makeRoot();
+  addWorker(root);
+  start(root, "20", "legacy-store");
+  const report = persist(root, "20", "legacy-store");
+  notify(root, report);
+  consumeAndValidate(root, report);
+  integrateChange(root, "legacy-store", {
+    strategy: "cherry-pick",
+    decision_id: "decision-legacy-store",
+    target_branch: "main",
+    source_commit: report.content.commit,
+    integrated_commit: "legacy-integrated-commit",
+    report_revision: report.report_revision,
+    report_digest: report.report_digest
+  });
+
+  for (const filePath of jsonFiles(root)) {
+    const value = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    value.schema_version = "1.0.0";
+    if (filePath.endsWith("ledger.json")) {
+      delete value.pending_attention_count;
+      for (const entry of value.workers) delete entry.attention;
+    }
+    if (filePath.includes(`${path.sep}events${path.sep}`)) delete value.delivery_attempted_at;
+    if (filePath.includes(`${path.sep}reports${path.sep}`) && value.coordinator_validation) {
+      delete value.coordinator_validation.report_revision;
+      delete value.coordinator_validation.report_digest;
+      delete value.coordinator_validation.subject_head;
+    }
+    if (filePath.includes(`${path.sep}assignments${path.sep}`) && value.integration) {
+      delete value.integration.decision_id;
+      delete value.integration.target_branch;
+      delete value.integration.report_revision;
+      delete value.integration.report_digest;
+    }
+    fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
+  }
+
+  const migrated = statusSnapshot(root);
+  assert.equal(migrated.project.schema_version, SCHEMA_VERSION);
+  assert.equal(migrated.ledger.schema_version, SCHEMA_VERSION);
+  assert.equal(migrated.ledger.pending_attention_count, 0);
+  assert.equal(migrated.ledger.workers[0].attention, null);
+  assert.ok(jsonFiles(root).every((filePath) =>
+    JSON.parse(fs.readFileSync(filePath, "utf8")).schema_version === SCHEMA_VERSION));
+  const migratedAssignment = readAssignment(root, "legacy-store");
+  assert.equal(migratedAssignment.integration.decision_id, "decision-legacy-store");
+  assert.equal(migratedAssignment.integration.target_branch, "legacy-unrecorded");
+  assert.equal(migratedAssignment.integration.report_revision, 1);
+  const migratedReport = readReport(root, "20", "legacy-store", 1);
+  assert.equal(migratedAssignment.integration.report_digest, migratedReport.report_digest);
+  assert.equal(migratedReport.coordinator_validation.subject_head, migratedReport.content.workspace.head);
+  assert.equal(fullSweep(root).unchanged, true);
+});
+
+test("compatibility: an unknown future store schema fails closed", () => {
+  const root = makeRoot();
+  const projectPath = path.join(root, "project.json");
+  const project = JSON.parse(fs.readFileSync(projectPath, "utf8"));
+  project.schema_version = "9.0.0";
+  fs.writeFileSync(projectPath, `${JSON.stringify(project, null, 2)}\n`);
+  assert.throws(() => statusSnapshot(root), /Unsupported future or unknown/);
+});
+
+test("compatibility: future child record schemas fail closed before status and sweep", () => {
+  const cases = [
+    ["ledger", (root) => path.join(root, "ledger.json")],
+    ["report", (root) => {
+      addWorker(root);
+      start(root, "20", "future-report");
+      persist(root, "20", "future-report");
+      return path.join(root, "reports", "20", "future-report", "1.json");
+    }],
+    ["event", (root) => {
+      addWorker(root);
+      start(root, "20", "future-event");
+      const report = persist(root, "20", "future-event");
+      const event = notify(root, report);
+      return path.join(root, "events", `${String(event.sequence).padStart(12, "0")}-${event.event_id}.json`);
+    }]
+  ];
+
+  for (const [label, prepare] of cases) {
+    const root = makeRoot();
+    const filePath = prepare(root);
+    const record = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    record.schema_version = "9.0.0";
+    fs.writeFileSync(filePath, `${JSON.stringify(record, null, 2)}\n`);
+    assert.throws(() => statusSnapshot(root), /Unsupported future or unknown/, label);
+    assert.throws(() => fullSweep(root), /Unsupported future or unknown/, label);
+  }
+});
+
+test("compatibility: a partially migrated 1.0 store resumes under the project lock", () => {
+  const root = makeRoot();
+  const projectPath = path.join(root, "project.json");
+  const ledgerPath = path.join(root, "ledger.json");
+  const project = JSON.parse(fs.readFileSync(projectPath, "utf8"));
+  const ledger = JSON.parse(fs.readFileSync(ledgerPath, "utf8"));
+  project.schema_version = "1.0.0";
+  ledger.schema_version = "1.0.0";
+  delete ledger.pending_attention_count;
+  fs.writeFileSync(projectPath, `${JSON.stringify(project, null, 2)}\n`);
+  fs.writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
+
+  const resumed = statusSnapshot(root);
+  assert.equal(resumed.project.schema_version, SCHEMA_VERSION);
+  assert.equal(resumed.registry.schema_version, SCHEMA_VERSION);
+  assert.equal(resumed.ledger.schema_version, SCHEMA_VERSION);
+  assert.equal(resumed.ledger.pending_attention_count, 0);
 });
 
 test("11 title changes do not break stable identity", () => {
@@ -335,8 +541,12 @@ test("supplemental: close requires complete release evidence", () => {
   consumeAndValidate(root, report);
   integrateChange(root, "release-01", {
     strategy: "cherry-pick",
-    source_commit: "source-commit",
-    integrated_commit: "integrated-commit"
+    decision_id: "decision-release-01",
+    target_branch: "main",
+    source_commit: report.content.commit,
+    integrated_commit: "integrated-commit",
+    report_revision: report.report_revision,
+    report_digest: report.report_digest
   });
   assert.throws(() => closeAssignment(root, "release-01", { release_evidence: {} }), /incomplete/);
   closeAssignment(root, "release-01", {
@@ -373,6 +583,7 @@ test("incident: pre-final gate ingests four completions during an unrelated answ
         thread_id: worker.thread_id,
         host_id: worker.host_id,
         after_cursor: worker.status_cursor,
+        changed: false,
         cursor: `cursor-${workerId}-${index}`
       };
     });
