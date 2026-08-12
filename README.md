@@ -69,9 +69,11 @@ Send the `message` returned by `prepare` unchanged with Codex's native
 
 ## Trust and testing
 
-Codex requires users to review and trust changed plugin Hooks. Use a new task
-after installation, trust the Hooks, then run a disposable Captain/Crew wake
-test before relying on the plugin for project work.
+Codex requires users to review and trust changed plugin Hooks. After installing
+or updating Coordlane, fully restart Codex so the host reloads the Hook bundle.
+Then use a new task, trust the Hooks, and run a disposable Captain/Crew wake
+test before relying on the plugin for project work. Seeing the Skill in a task
+does not by itself prove that the lifecycle Hooks were loaded.
 
 ```bash
 npm test

@@ -63,7 +63,8 @@ node bin/coordlane.mjs status demo
 Captain 使用 Codex 原生 `send_message_to_thread`，把 `prepare` 返回的 `message`
 原样发给对应 Crew。
 
-安装或更新后，应在新任务中审阅并信任 Hook，再用虚构 Captain/Crew 做一次
-真实双向唤醒测试。
+安装或更新后，应完整重启 Codex，让宿主重新载入 Hook；随后在新任务中审阅
+并信任 Hook，再用虚构 Captain/Crew 做一次真实双向唤醒测试。任务能够读取
+Skill，并不能单独证明生命周期 Hook 已经加载。
 
 MIT License。
