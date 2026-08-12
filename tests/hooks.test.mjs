@@ -7,10 +7,13 @@ import { spawnSync } from "node:child_process";
 import {
   acknowledgeAssignment,
   adjudicateTerminal,
+  archiveWorker,
+  bindCaptain,
   createAssignment,
   createWorker,
   deferNextAction,
   dispatchAssignment,
+  doctor,
   emitEvent,
   initProject,
   persistReport,
@@ -219,8 +222,9 @@ try {
     assignment_id: normalEvent.assignment_id,
     report_revision: normalEvent.report_revision,
     report_digest: normalEvent.report_digest,
-    disposition: "accept",
-    next_action_required: false
+    disposition: "reject",
+    next_action_required: false,
+    closure_reason: "Synthetic Hook test closes without accepting project work"
   });
   deferNextAction(normal, {
     assignment_id: normalEvent.assignment_id,
@@ -405,6 +409,95 @@ try {
     stop_hook_active: false
   });
   assert.equal(captainAllowed.continue, true);
+  const healthyDoctor = doctor(normal);
+  assert.equal(healthyDoctor.health, "green");
+  assert.equal(healthyDoctor.hook_identity_current, true);
+  assert.equal(healthyDoctor.control_plane_hooks, "complete");
+  assert.equal(healthyDoctor.crew_terminal_hooks, "complete");
+  assert.deepEqual(healthyDoctor.missing_control_plane_hooks, []);
+  assert.deepEqual(healthyDoctor.missing_crew_terminal_hooks, []);
+
+  const captainOnly = makeState("captain-only-doctor");
+  for (const [eventName, toolName] of [
+    ["UserPromptSubmit", null],
+    ["PreToolUse", "list_threads"],
+    ["PostToolUse", "list_threads"],
+    ["Stop", null]
+  ]) {
+    runHook(captainOnly, {
+      hook_event_name: eventName,
+      session_id: "captain-thread",
+      turn_id: "captain-only-turn",
+      cwd: "/tmp/coordlane-fictional",
+      stop_hook_active: true,
+      ...(toolName ? { tool_name: toolName, tool_input: {}, tool_response: {} } : {})
+    });
+  }
+  assert.equal(doctor(captainOnly).control_plane_hooks, "complete");
+  assert.equal(doctor(captainOnly).crew_terminal_hooks, "incomplete");
+  assert.equal(doctor(captainOnly).health, "red");
+
+  const crewOnly = makeState("crew-only-doctor");
+  runHook(crewOnly, {
+    hook_event_name: "PostToolUse",
+    session_id: "worker-thread",
+    cwd: "/tmp/coordlane-fictional",
+    tool_name: "list_threads",
+    tool_input: {},
+    tool_response: {}
+  });
+  runHook(crewOnly, {
+    hook_event_name: "Stop",
+    session_id: "worker-thread",
+    cwd: "/tmp/coordlane-fictional",
+    stop_hook_active: true
+  });
+  assert.equal(doctor(crewOnly).control_plane_hooks, "incomplete");
+  assert.equal(doctor(crewOnly).crew_terminal_hooks, "complete");
+  assert.equal(doctor(crewOnly).health, "red");
+
+  bindCaptain(captainOnly, { thread_id: "replacement-captain", host_id: "host-local" });
+  assert.equal(doctor(captainOnly).control_plane_hooks, "incomplete");
+  assert.equal(doctor(captainOnly).health, "red", "Captain rebind must invalidate old Captain receipts");
+
+  const crewReplacement = fs.mkdtempSync(path.join(os.tmpdir(), "coordlane-hook-crew-replacement-"));
+  roots.push(crewReplacement);
+  initProject(crewReplacement, "mission-crew-replacement", {
+    captain_thread_id: "captain-thread",
+    captain_host_id: "host-local"
+  });
+  createWorker(crewReplacement, {
+    worker_id: "old-worker",
+    role_id: "crew",
+    thread_id: "old-worker-thread",
+    host_id: "host-local",
+    workspace: "/tmp/coordlane-fictional-old",
+    branch: "work/old",
+    branch_policy: "ephemeral-cherry-pick"
+  });
+  for (const eventName of ["PostToolUse", "Stop"]) {
+    runHook(crewReplacement, {
+      hook_event_name: eventName,
+      session_id: "old-worker-thread",
+      host_id: "host-local",
+      cwd: "/tmp/coordlane-fictional-old",
+      stop_hook_active: true,
+      ...(eventName === "PostToolUse" ? { tool_name: "list_threads", tool_input: {}, tool_response: {} } : {})
+    });
+  }
+  assert.equal(doctor(crewReplacement).crew_terminal_hooks, "complete", JSON.stringify(doctor(crewReplacement)));
+  archiveWorker(crewReplacement, "old-worker");
+  createWorker(crewReplacement, {
+    worker_id: "replacement-worker",
+    role_id: "crew",
+    thread_id: "replacement-worker-thread",
+    host_id: "host-local",
+    workspace: "/tmp/coordlane-fictional-replacement",
+    branch: "work/replacement",
+    branch_policy: "ephemeral-cherry-pick"
+  });
+  assert.equal(doctor(crewReplacement).crew_terminal_hooks, "incomplete");
+  assert.equal(doctor(crewReplacement).health, "red", "Archived Crew receipts must not authenticate its replacement");
   runHook(normal, {
     hook_event_name: "UserPromptSubmit",
     session_id: "captain-thread",

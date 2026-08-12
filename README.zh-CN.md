@@ -44,7 +44,8 @@ Coordlane 有意保持比 Agent IDE、自治 Swarm 或通用软件开发方法�
 - **先拿业务结果，再做仪式。** Assignment 声明风险层级、首个价值动作和需要/
   不需要的证据，只硬性执行 operator 能可信记录的验证轮次、测试次数和外部调用数。
 - **不静默伪装启用。** Skill 被加载不等于项目已接入。`doctor` 会在状态仓、Hook
-  回执、Captain 绑定或 operator 缺失时亮红灯并给出精确修复命令。
+  回执、Captain 绑定或 operator 缺失时亮红灯并给出精确修复命令。只有角色绑定
+  的回执同时覆盖 Captain 控制面与 Crew 终态生命周期才会变绿，单一角色不能代替另一组。
 - **不靠持续消耗额度换可靠性。** Coordlane 没有心跳、daemon、重试轮询或后台
   AI 巡逻，只使用有上限的增量快照；通知失败时让事件保持持久，等待 Captain
   下个回合恢复。
@@ -77,8 +78,9 @@ Coordlane 有意保持比 Agent IDE、自治 Swarm 或通用软件开发方法�
   不要求 AI 临时编写状态脚本。
 - 可执行 finalizer 会拒绝缺少本回合全 registry 扫描、freshness 未知、仍有
   未读终态，或已消费终态尚未裁定/派发下一动作/明确挂起的 final 输出。
-- 机器可读 authority manifest 通过 digest 派生文件锁和停止条件；Captain 手填
-  的冲突路径会被拒绝。
+- 只有显式提供机器可读 authority manifest 时，digest 才会绑定文件锁与停止条件，
+  并拒绝同一次输入里的冲突路径。从项目文档自动发现 active authority 属于 P1；
+  未提供 manifest 的 assignment 仍由 Captain 填写。
 - Crew 自报测试与 Validator 产出、Captain 审阅的独立证据分开。
 - 显式选择临时 cherry-pick 或长期 merge 分支策略，禁止混用。
 - 记录来源提交与合流提交；“完成”不等于释放、上线或整个 Mission 完成。
@@ -122,7 +124,8 @@ Crew 时先尝试一次 `timeoutMs=0` 批量快照，只补扫返回中缺失的
 Coordlane 不会把宿主无法可靠观测的 Token、CPU、通用工具耗时或网络预算伪装成
 硬门禁。0.3.4 只硬性执行 operator 能记录的验证轮次、测试次数、有界外部调用数，
 以及首个业务结果期限。这些限制用于阻止协调循环，不会新增心跳、轮询或模型调用。
-证据缓存属于 P1，0.3.4 不宣称已经实现。
+其执行方式是 operator-recorded：外部调用计数依赖 Crew 忠实调用 `record-usage`，
+并非宿主级不可绕过安全边界。证据缓存属于 P1，0.3.4 不宣称已经实现。
 
 ## 快速开始
 

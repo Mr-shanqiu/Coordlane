@@ -62,6 +62,7 @@
     "next_action_required": null,
     "next_action_assignment_id": null,
     "next_action_dispatched_at": null,
+    "closure_reason": null,
     "deferred_reason": null,
     "deferred_at": null
   }

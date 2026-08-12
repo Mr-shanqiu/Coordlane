@@ -17,7 +17,9 @@ Before any coordination action, run `doctor` against the intended state
 directory. Skill loaded is not Coordlane enabled. If `doctor.health` is red,
 stop and surface its exact repair commands; do not silently fall back to chat
 memory. `bootstrap` is explicit and idempotent and must target only the
-user-approved project state directory.
+user-approved project state directory. Green health requires separate
+role-bound coverage for Captain control-plane Hooks and Crew terminal Hooks;
+never treat events observed from only one role as full lifecycle health.
 
 The Captain is a non-blocking control plane. It communicates with the user,
 maintains coordination state, takes zero-time snapshots, dispatches bounded
@@ -68,7 +70,11 @@ terminal writes, and general shell commands even after Turn-entry passes.
    `evidence_not_needed`. Enforce only `max_validation_rounds`,
    `max_test_runs`, and `max_external_calls`, plus
    `first_business_result_deadline`; never claim token, CPU, generic tool, or
-   network accounting that the host cannot prove.
+   network accounting that the host cannot prove. These limits are
+   operator-recorded: external-call counting depends on Crew using
+   `record-usage` and is not an unbypassable host boundary. When an explicit
+   digest-bound authority manifest is supplied, use its path locks; automatic
+   active-authority discovery from project prose is P1 deferred.
 6. **Preflight before dispatch.** Block writes on dirty or wrong workspace,
    overlap, unmet dependency, unsafe runtime, or unsettled truth. Unsettled
    truth permits only read-only audit or skeleton work.

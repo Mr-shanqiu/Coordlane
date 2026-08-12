@@ -10,6 +10,7 @@ import {
   assertFinalizable,
   authorityManifestDigest,
   beginTurn,
+  bootstrapProject,
   createAssignment,
   createAssignmentFromAuthority,
   createWorker,
@@ -23,6 +24,7 @@ import {
   readAssignment,
   recordAssignmentUsage,
   recordDelivery,
+  recordNextActionDispatched,
   recordSweepObservation,
   startAssignment,
   statusSnapshot,
@@ -229,6 +231,14 @@ try {
     const drained = fullSweep(root);
     assert.equal(drained.pending_adjudications.length, 1);
     assert.throws(() => assertFinalizable(root), /pending_adjudication_count=1|Finalization refused/);
+    validateReport(root, {
+      worker_id: "35",
+      assignment_id: assignment.assignment_id,
+      report_revision: 1,
+      report_digest: report.report_digest,
+      validator_mode: "captain",
+      checks: [{ check: "terminal result", result: "passed", evidence: "synthetic accepted evidence", subject_head: report.content.workspace.head }]
+    });
     adjudicateTerminal(root, {
       assignment_id: assignment.assignment_id,
       report_revision: 1,
@@ -276,6 +286,166 @@ try {
     assert.equal(migrated.project.schema_version, "1.2.0");
     assert.equal(migrated.ledger.pending_adjudication_count, 0);
     console.log("ok - schema 1.1.0 store migrates safely to 1.2.0");
+  }
+
+  {
+    const missing = fs.mkdtempSync(path.join(os.tmpdir(), "coordlane-invalid-bootstrap-"));
+    roots.push(missing);
+    assert.throws(() => bootstrapProject(missing, ""), /project_id/);
+    assert.throws(() => bootstrapProject(missing, "invalid project id"), /project_id/);
+    const root = makeRoot();
+    const registryPath = path.join(root, "registry.json");
+    const registry = JSON.parse(fs.readFileSync(registryPath, "utf8"));
+    registry.project_id = "other-project";
+    fs.writeFileSync(registryPath, `${JSON.stringify(registry, null, 2)}\n`);
+    assert.equal(doctor(root).health, "red");
+    assert.match(doctor(root).error, /registry does not match/);
+    console.log("ok - bootstrap validates project_id and doctor checks cross-record project semantics");
+  }
+
+  {
+    const root = makeRoot();
+    addWorker(root, "61");
+    const makeTerminal = (assignmentId, status) => {
+      createAssignment(root, {
+        assignment_id: assignmentId,
+        parent_decision_id: `decision-${assignmentId}`,
+        worker_id: "61",
+        scope_version: 1,
+        objective: `Produce ${status}`,
+        acceptance_criteria: ["Terminal fact is durable"],
+        owned_resources: [],
+        forbidden_resources: [],
+        branch_policy: "ephemeral-cherry-pick"
+      });
+      dispatchAndStart(root, assignmentId);
+      const assignment = readAssignment(root, assignmentId);
+      const terminal = persistTerminalReport(root, {
+        worker_id: "61",
+        assignment_id: assignmentId,
+        attempt_id: assignment.attempt_id,
+        ownership_epoch: assignment.ownership_epoch,
+        report_revision: 1,
+        content: reportContent("61", assignmentId, {
+          status,
+          completed_work: status === "completed" ? ["Completed"] : [],
+          blockers: ["blocked", "failed"].includes(status) ? ["Synthetic blocker"] : [],
+          decisions_needed: status === "decision_needed" ? ["Choose next action"] : [],
+          business_outcome: status === "completed" ? "Done" : "Terminal fact recorded",
+          coordination_cost: { validation_rounds: 0, test_runs: 0, external_calls: 0 }
+        })
+      });
+      fullSweep(root);
+      return terminal.report;
+    };
+    const decision = makeTerminal("decision-61", "decision_needed");
+    assert.throws(() => adjudicateTerminal(root, {
+      assignment_id: "decision-61", report_revision: 1, report_digest: decision.report_digest,
+      disposition: "accept", next_action_required: false
+    }), /requires await_decision/);
+    assert.throws(() => adjudicateTerminal(root, {
+      assignment_id: "decision-61", report_revision: 1, report_digest: decision.report_digest,
+      disposition: "await_decision", next_action_required: false
+    }), /requires a next action/);
+    adjudicateTerminal(root, {
+      assignment_id: "decision-61", report_revision: 1, report_digest: decision.report_digest,
+      disposition: "await_decision", next_action_required: true
+    });
+    console.log("ok - terminal status constrains adjudication disposition and next-action requirement");
+  }
+
+  {
+    const root = makeRoot();
+    addWorker(root, "35");
+    addWorker(root, "40");
+    createAssignment(root, {
+      assignment_id: "source-35", parent_decision_id: "decision-chain", worker_id: "35",
+      scope_version: 1, objective: "Request a chained decision", acceptance_criteria: ["Decision is explicit"],
+      owned_resources: [], forbidden_resources: [], branch_policy: "ephemeral-cherry-pick"
+    });
+    dispatchAndStart(root, "source-35");
+    const sourceAssignment = readAssignment(root, "source-35");
+    const { report } = persistTerminalReport(root, {
+      worker_id: "35", assignment_id: "source-35", attempt_id: sourceAssignment.attempt_id,
+      ownership_epoch: 1, report_revision: 1,
+      content: reportContent("35", "source-35", {
+        status: "decision_needed", completed_work: [], decisions_needed: ["Choose follow-up"],
+        business_outcome: "Decision is pending",
+        coordination_cost: { validation_rounds: 0, test_runs: 0, external_calls: 0 }
+      })
+    });
+    fullSweep(root);
+    adjudicateTerminal(root, {
+      assignment_id: "source-35", report_revision: 1, report_digest: report.report_digest,
+      disposition: "await_decision", next_action_required: true
+    });
+    createAssignment(root, {
+      assignment_id: "unrelated-40", parent_decision_id: "different-decision", worker_id: "40",
+      scope_version: 1, objective: "Unrelated", acceptance_criteria: ["Dispatched"],
+      owned_resources: [], forbidden_resources: [], branch_policy: "ephemeral-cherry-pick"
+    });
+    dispatchAssignment(root, "unrelated-40", { preflight });
+    assert.throws(() => recordNextActionDispatched(root, {
+      assignment_id: "source-35", report_revision: 1, next_action_assignment_id: "unrelated-40"
+    }), /not bound/);
+    createAssignment(root, {
+      assignment_id: "followup-40", parent_decision_id: "decision-chain", worker_id: "40",
+      previous_assignment_id: "source-35", trigger_report_digest: report.report_digest,
+      scope_version: 1, objective: "Bound follow-up", acceptance_criteria: ["Dispatched"],
+      owned_resources: [], forbidden_resources: [], branch_policy: "ephemeral-cherry-pick"
+    });
+    dispatchAssignment(root, "followup-40", { preflight });
+    assert.equal(recordNextActionDispatched(root, {
+      assignment_id: "source-35", report_revision: 1, next_action_assignment_id: "followup-40"
+    }).status, "next_action_dispatched");
+    console.log("ok - dispatch-next requires predecessor, report digest, and decision binding");
+  }
+
+  {
+    const root = makeRoot();
+    addWorker(root, "82");
+    const deadline = new Date(Date.now() - 1000).toISOString();
+    createAssignment(root, {
+      assignment_id: "expired-82", parent_decision_id: "decision-expired", worker_id: "82",
+      scope_version: 1, objective: "Reach first result", acceptance_criteria: ["Result"],
+      owned_resources: [], forbidden_resources: [], branch_policy: "ephemeral-cherry-pick",
+      budgets: { max_validation_rounds: 1, max_test_runs: 1, max_external_calls: 1, first_business_result_deadline: deadline }
+    });
+    assert.throws(() => dispatchAssignment(root, "expired-82", { preflight }), /deadline exceeded/);
+
+    createAssignment(root, {
+      assignment_id: "over-budget-82", parent_decision_id: "decision-over-budget", worker_id: "82",
+      scope_version: 1, objective: "Record terminal budget fact", acceptance_criteria: ["Fact"],
+      owned_resources: [], forbidden_resources: [], branch_policy: "ephemeral-cherry-pick",
+      budgets: { max_validation_rounds: 1, max_test_runs: 0, max_external_calls: 0, first_business_result_deadline: null }
+    });
+    dispatchAndStart(root, "over-budget-82");
+    const assignment = readAssignment(root, "over-budget-82");
+    const assignmentPath = path.join(root, "assignments", "over-budget-82.json");
+    const tampered = JSON.parse(fs.readFileSync(assignmentPath, "utf8"));
+    tampered.usage.external_calls = 1;
+    fs.writeFileSync(assignmentPath, `${JSON.stringify(tampered, null, 2)}\n`);
+    assert.throws(() => persistTerminalReport(root, {
+      worker_id: "82", assignment_id: "over-budget-82", attempt_id: assignment.attempt_id,
+      ownership_epoch: 1, report_revision: 1,
+      content: reportContent("82", "over-budget-82", {
+        coordination_cost: { validation_rounds: 0, test_runs: 0, external_calls: 1 }
+      })
+    }), /Completed report refused/);
+    const terminal = persistTerminalReport(root, {
+      worker_id: "82", assignment_id: "over-budget-82", attempt_id: assignment.attempt_id,
+      ownership_epoch: 1, report_revision: 1,
+      content: reportContent("82", "over-budget-82", {
+        status: "decision_needed", completed_work: [], decisions_needed: ["Budget exceeded"],
+        business_outcome: "Budget exception recorded",
+        coordination_cost: { validation_rounds: 0, test_runs: 0, external_calls: 1 }
+      })
+    });
+    assert.equal(terminal.report.content.status, "decision_needed");
+    assert.equal(readAssignment(root, "over-budget-82").first_business_result_at, null);
+    assert.ok(readAssignment(root, "over-budget-82").first_terminal_fact_at);
+    assert.equal(statusSnapshot(root).enforcement.mode, "operator-recorded");
+    console.log("ok - budget gates cover dispatch and completion while preserving terminal failure reporting");
   }
 } finally {
   for (const root of roots) fs.rmSync(root, { recursive: true, force: true });

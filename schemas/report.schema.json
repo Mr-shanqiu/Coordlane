@@ -220,7 +220,7 @@
     "handoff": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status", "adjudicated_at", "disposition", "next_action_required", "next_action_assignment_id", "next_action_dispatched_at", "deferred_reason", "deferred_at"],
+      "required": ["status", "adjudicated_at", "disposition", "next_action_required", "next_action_assignment_id", "next_action_dispatched_at", "closure_reason", "deferred_reason", "deferred_at"],
       "properties": {
         "status": { "enum": ["needs_adjudication", "adjudicated", "next_action_dispatched", "explicitly_deferred"] },
         "adjudicated_at": { "type": ["string", "null"], "format": "date-time" },
@@ -228,6 +228,7 @@
         "next_action_required": { "type": ["boolean", "null"] },
         "next_action_assignment_id": { "oneOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
         "next_action_dispatched_at": { "type": ["string", "null"], "format": "date-time" },
+        "closure_reason": { "type": ["string", "null"], "minLength": 1 },
         "deferred_reason": { "type": ["string", "null"], "minLength": 1 },
         "deferred_at": { "type": ["string", "null"], "format": "date-time" }
       }

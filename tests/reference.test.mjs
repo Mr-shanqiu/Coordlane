@@ -570,6 +570,19 @@ test("supplemental: close requires complete release evidence", () => {
     report_revision: report.report_revision,
     report_digest: report.report_digest
   });
+  assert.throws(() => closeAssignment(root, "release-01", { release_evidence: {} }), /handoff adjudication/);
+  adjudicateTerminal(root, {
+    assignment_id: "release-01",
+    report_revision: report.report_revision,
+    report_digest: report.report_digest,
+    disposition: "accept",
+    next_action_required: false
+  });
+  deferNextAction(root, {
+    assignment_id: "release-01",
+    report_revision: report.report_revision,
+    reason: "Validated integrated work has no follow-up"
+  });
   assert.throws(() => closeAssignment(root, "release-01", { release_evidence: {} }), /incomplete/);
   closeAssignment(root, "release-01", {
     release_evidence: {
@@ -629,8 +642,9 @@ test("incident: pre-final gate ingests four completions during an unrelated answ
       assignment_id: event.assignment_id,
       report_revision: event.report_revision,
       report_digest: event.report_digest,
-      disposition: "accept",
-      next_action_required: false
+      disposition: "reject",
+      next_action_required: false,
+      closure_reason: "Synthetic incident result is closed without acceptance"
     });
     deferNextAction(root, {
       assignment_id: event.assignment_id,

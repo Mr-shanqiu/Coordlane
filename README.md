@@ -55,7 +55,9 @@ Its core advantage is the combination of these reliability boundaries:
   and external-call counts that the local operator can actually record.
 - **No silent activation.** Loading the Skill is not enrollment. `doctor` shows
   a red result with exact repair commands when the state store, Hook receipt,
-  Captain binding, or operator path is missing.
+  Captain binding, or operator path is missing. Health is green only after
+  role-bound receipts cover both the Captain control-plane lifecycle and the
+  Crew terminal lifecycle; one role cannot make the other appear healthy.
 - **Reliability without recurring quota spend.** Coordlane has no heartbeat,
   daemon, retry polling, or background AI patrol. It uses bounded incremental
   snapshots and leaves a failed notification durable for the next Captain turn.
@@ -94,8 +96,10 @@ small Codex-native coordination safety layer. See the dated
   registry-wide Pre-final sweep, terminal results remain unread, or a consumed
   terminal result has not been adjudicated and closed with a dispatched or
   explicitly deferred next action.
-- Machine-readable authority manifests derive file locks and stop conditions;
-  Captain-supplied paths that drift from the digest-bound authority are refused.
+- When a machine-readable authority manifest is explicitly supplied, its digest
+  binds file locks and stop conditions and conflicting supplied paths are
+  refused. Automatic extraction of active authority from project documents is
+  P1 deferred; assignments without a manifest remain Captain-supplied.
 - Validator evidence reviewed by the Captain is separate from worker-reported tests.
 - Explicit branch policy prevents cherry-pick and persistent-workstream history
   from being mixed.
@@ -149,7 +153,9 @@ network budgets it cannot reliably observe. It does enforce the three counters
 its operator can record without background activity: validation rounds, test
 runs, and bounded external calls, plus a first-business-result deadline. These
 limits stop coordination loops; they do not add heartbeat, polling, or model
-calls. Evidence caching remains P1 and is not claimed in 0.3.4.
+calls. Enforcement is operator-recorded: external-call counting depends on the
+Crew faithfully using `record-usage` and is not an unbypassable host security
+boundary. Evidence caching remains P1 and is not claimed in 0.3.4.
 
 ## Quick start
 

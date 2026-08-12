@@ -14,14 +14,20 @@ Last audited: 2026-08-12
   production, validation, integration recording, release, archive, and status.
 - Explicit idempotent `bootstrap` and read-only `doctor`. Loading the bundled
   Skill is not enrollment; missing store, Hook receipt, Captain binding, or
-  operator state produces a red result and repair commands.
+  operator state produces a red result and repair commands. Receipts are keyed
+  by role and event; Doctor reports Captain control-plane and Crew terminal
+  coverage separately and requires both groups for green health.
 - R0/R1/R2 policy, business-progress fields, and hard enforcement only for
   validation rounds, test runs, bounded external calls, and first-result
-  deadline. No background query or model loop was added.
+  deadline. Enforcement is operator-recorded; external calls depend on Crew
+  recording them and are not an unbypassable host boundary. No background
+  query or model loop was added.
 - Terminal consumption now has an executable adjudication queue and refuses
   finalization until the next action is dispatched or explicitly deferred.
-- Assignment locks can be derived only from a current digest-bound JSON
-  authority manifest; natural-language task documents are not parsed.
+- When explicitly supplied, a current digest-bound JSON authority manifest
+  binds assignment locks. Automatic active-authority discovery and natural-
+  language task-document extraction remain P1 deferred; an assignment without
+  a manifest remains Captain-supplied.
 - Fifteen executable failure scenarios plus adversarial worktree, false-receipt,
   stable-identity, idle-quota, explicit-missing-store, and concurrent-writer
   regressions.

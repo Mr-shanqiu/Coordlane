@@ -8,7 +8,18 @@ import { fileURLToPath } from "node:url";
 import { gitSharedStateRoot, pluginProjectStateRoot } from "./state-root.mjs";
 
 export const SCHEMA_VERSION = "1.2.0";
+export const PLUGIN_VERSION = "0.3.4";
 const LEGACY_SCHEMA_VERSIONS = new Set(["1.0.0", "1.1.0"]);
+const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const REQUIRED_HOOK_EVENTS = Object.freeze({
+  control_plane: [
+    "captain:UserPromptSubmit",
+    "captain:PreToolUse",
+    "captain:PostToolUse",
+    "captain:Stop"
+  ],
+  crew_terminal: ["crew:PostToolUse", "crew:Stop"]
+});
 
 export const ASSIGNMENT_TRANSITIONS = Object.freeze({
   draft: ["dispatched", "superseded"],
@@ -58,6 +69,25 @@ const RISK_POLICIES = Object.freeze({
 });
 
 const now = () => new Date().toISOString();
+
+const assertId = (value, label) => {
+  if (typeof value !== "string" || !ID_PATTERN.test(value)) {
+    throw new Error(`${label} must match ${ID_PATTERN}`);
+  }
+  return value;
+};
+
+const operatorPath = () => fileURLToPath(new URL("../bin/coordlane.mjs", import.meta.url));
+const operatorDigest = (candidate = operatorPath()) => {
+  const body = fs.readFileSync(candidate);
+  return `sha256:${crypto.createHash("sha256").update(body).digest("hex")}`;
+};
+
+const OPERATOR_RECORDED_ENFORCEMENT = Object.freeze({
+  mode: "operator-recorded",
+  enforced_counters: ["validation_rounds", "test_runs", "external_calls"],
+  caveat: "External-call enforcement depends on Crew recording each call through record-usage; it is not a host security boundary."
+});
 
 const stableValue = (value) => {
   if (Array.isArray(value)) return value.map(stableValue);
@@ -233,6 +263,7 @@ const migrateStoreUnlocked = (root) => {
       next_action_required: false,
       next_action_assignment_id: null,
       next_action_dispatched_at: null,
+      closure_reason: null,
       deferred_reason: null,
       deferred_at: null
     };
@@ -274,6 +305,12 @@ const migrateStoreUnlocked = (root) => {
     delete assignment.budgets.independent_validation;
     assignment.usage ??= { validation_rounds: 0, test_runs: 0, external_calls: 0 };
     assignment.authority ??= null;
+    assignment.previous_assignment_id ??= null;
+    assignment.trigger_report_digest ??= null;
+    assignment.first_business_result_at ??= null;
+    assignment.first_terminal_fact_at ??= assignment.worker_report_revision > 0
+      ? (assignment.updated_at ?? now())
+      : null;
     if (assignment.integration) {
       const revision = assignment.integration.report_revision ??
         assignment.integration.validated_report_revision ?? assignment.worker_report_revision;
@@ -342,6 +379,7 @@ const requireStore = (root) => {
 };
 
 export const initProject = (root, projectId, options = {}) => withStoreLock(root, () => {
+  assertId(projectId, "project_id");
   const paths = storePaths(root);
   if (fs.existsSync(paths.project)) throw new Error(`Coordlane store already exists: ${root}`);
   ensureDirectory(paths.assignments);
@@ -395,10 +433,12 @@ export const statusSnapshot = (root) => ({
   project: projectFor(root),
   registry: registryFor(root),
   ledger: ledgerFor(root),
-  ownership: ownershipFor(root)
+  ownership: ownershipFor(root),
+  enforcement: structuredClone(OPERATOR_RECORDED_ENFORCEMENT)
 });
 
 export const bootstrapProject = (root, projectId, options = {}) => {
+  assertId(projectId, "project_id");
   const projectPath = path.join(path.resolve(root), "project.json");
   if (!fs.existsSync(projectPath)) return { created: true, ...initProject(root, projectId, options) };
   const snapshot = statusSnapshot(root);
@@ -410,15 +450,60 @@ export const bootstrapProject = (root, projectId, options = {}) => {
 
 export const recordHookReceipt = (root, input = {}) => withStoreLock(root, () => {
   const paths = requireStore(root);
-  const receipt = {
+  const currentOperatorPath = fs.realpathSync(operatorPath());
+  const currentOperatorDigest = operatorDigest(currentOperatorPath);
+  let receipt = null;
+  if (fs.existsSync(paths.hookReceipt)) {
+    try {
+      receipt = readJson(paths.hookReceipt);
+    } catch {
+      receipt = null;
+    }
+  }
+  const identityMatches = receipt?.schema_version === SCHEMA_VERSION &&
+    receipt?.plugin_version === PLUGIN_VERSION &&
+    receipt?.operator_path === currentOperatorPath &&
+    receipt?.operator_digest === currentOperatorDigest &&
+    receipt?.project_id === projectFor(root).project_id;
+  const role = input.role;
+  const sessionId = input.session_id;
+  const hostId = input.host_id;
+  if (!["captain", "crew"].includes(role) || typeof sessionId !== "string" || typeof hostId !== "string") {
+    throw new Error("Hook receipt requires an authenticated session role and stable identity");
+  }
+  const eventType = input.event_type ?? input.hook;
+  const events = identityMatches && receipt.events && typeof receipt.events === "object"
+    ? { ...receipt.events }
+    : {};
+  if (typeof eventType === "string" && eventType.length > 0) {
+    events[`${role}:${eventType}`] = { observed_at: now(), role, session_id: sessionId, host_id: hostId };
+  }
+  receipt = {
     schema_version: SCHEMA_VERSION,
+    plugin_version: PLUGIN_VERSION,
     project_id: projectFor(root).project_id,
-    hook: input.hook ?? "coordlane-hook",
-    observed_at: now()
+    operator_path: currentOperatorPath,
+    operator_digest: currentOperatorDigest,
+    events,
+    updated_at: now()
   };
   atomicWriteJson(paths.hookReceipt, receipt);
   return receipt;
 });
+
+const assertDoctorStoreSemantics = (snapshot) => {
+  const projectId = assertId(snapshot.project?.project_id, "project.project_id");
+  if (snapshot.registry?.project_id !== projectId || !Array.isArray(snapshot.registry?.workers)) {
+    throw new Error("registry does not match project_id or workers is malformed");
+  }
+  if (snapshot.ledger?.project_id !== projectId || !Array.isArray(snapshot.ledger?.workers)) {
+    throw new Error("ledger does not match project_id or workers is malformed");
+  }
+  if (snapshot.ownership?.mission_id !== projectId || !Array.isArray(snapshot.ownership?.claims)) {
+    throw new Error("ownership does not match project_id or claims is malformed");
+  }
+  return projectId;
+};
 
 export const doctor = (root, options = {}) => {
   const resolved = path.resolve(root);
@@ -436,25 +521,69 @@ export const doctor = (root, options = {}) => {
       worker_registration_count: 0,
       unread_terminal_count: null,
       pending_adjudication_count: null,
+      enforcement: structuredClone(OPERATOR_RECORDED_ENFORCEMENT),
       repair_commands: repair
     };
   }
   try {
     const snapshot = statusSnapshot(resolved);
-    const hook = fs.existsSync(path.join(resolved, "hook-receipt.json")) ? "observed" : "missing";
+    const projectId = assertDoctorStoreSemantics(snapshot);
+    const expectedOperatorPath = fs.realpathSync(options.operator_path ?? operatorPath());
+    const expectedOperatorDigest = operatorDigest(expectedOperatorPath);
+    let receipt = null;
+    if (fs.existsSync(path.join(resolved, "hook-receipt.json"))) {
+      receipt = readJson(path.join(resolved, "hook-receipt.json"));
+    }
+    const identityCurrent = receipt?.schema_version === SCHEMA_VERSION &&
+      receipt?.plugin_version === PLUGIN_VERSION &&
+      receipt?.project_id === projectId &&
+      receipt?.operator_path === expectedOperatorPath &&
+      receipt?.operator_digest === expectedOperatorDigest;
+    const receiptValid = (key) => receipt?.events?.[key] &&
+      Number.isFinite(Date.parse(receipt.events[key].observed_at)) &&
+      `${receipt.events[key].role}:` === key.slice(0, key.indexOf(":") + 1);
+    const missingControlPlaneHooks = REQUIRED_HOOK_EVENTS.control_plane.filter((key) => {
+      const event = receipt?.events?.[key];
+      return !receiptValid(key) || event.session_id !== snapshot.project.captain_thread_id ||
+        event.host_id !== snapshot.project.captain_host_id;
+    });
+    const currentCrewIdentities = snapshot.registry.workers
+      .filter((worker) => worker.monitored !== false && !worker.archived)
+      .map((worker) => `${worker.host_id}/${worker.thread_id}`);
+    const crewEventIdentities = REQUIRED_HOOK_EVENTS.crew_terminal.map((key) => {
+      const event = receipt?.events?.[key];
+      return receiptValid(key) ? `${event.host_id}/${event.session_id}` : null;
+    });
+    const sameCurrentCrew = crewEventIdentities.every((identity) =>
+      identity !== null && identity === crewEventIdentities[0]) &&
+      currentCrewIdentities.includes(crewEventIdentities[0]);
+    const missingCrewTerminalHooks = sameCurrentCrew
+      ? []
+      : [...REQUIRED_HOOK_EVENTS.crew_terminal];
+    const controlPlaneHooks = identityCurrent && missingControlPlaneHooks.length === 0 ? "complete" : "incomplete";
+    const crewTerminalHooks = identityCurrent && missingCrewTerminalHooks.length === 0 ? "complete" : "incomplete";
+    const hook = controlPlaneHooks === "complete" && crewTerminalHooks === "complete"
+      ? "current-lifecycle-observed"
+      : "incomplete";
     const binding = snapshot.project.captain_thread_id && snapshot.project.captain_host_id ? "bound" : "missing";
-    if (hook === "missing") repair.push("codex plugin install ./coordlane");
+    if (hook !== "current-lifecycle-observed") repair.push("Run disposable bound Captain and monitored Crew probes covering Captain UserPromptSubmit/PreToolUse/PostToolUse/Stop and Crew PostToolUse/Stop, then rerun doctor");
     if (binding === "missing") repair.push(`node bin/coordlane.mjs bind-captain ${JSON.stringify(resolved)} captain.json`);
     return {
-      health: hook === "observed" && binding === "bound" ? "green" : "red",
-      enabled: hook === "observed" && binding === "bound",
+      health: hook === "current-lifecycle-observed" && binding === "bound" ? "green" : "red",
+      enabled: hook === "current-lifecycle-observed" && binding === "bound",
       state_store: "ready",
       hook,
+      hook_identity_current: identityCurrent,
+      control_plane_hooks: controlPlaneHooks,
+      crew_terminal_hooks: crewTerminalHooks,
+      missing_control_plane_hooks: missingControlPlaneHooks,
+      missing_crew_terminal_hooks: missingCrewTerminalHooks,
       operator: "available",
       captain_binding: binding,
       worker_registration_count: snapshot.registry.workers.filter((worker) => !worker.archived).length,
       unread_terminal_count: snapshot.ledger.unread_terminal_count,
       pending_adjudication_count: snapshot.ledger.pending_adjudication_count ?? 0,
+      enforcement: structuredClone(OPERATOR_RECORDED_ENFORCEMENT),
       repair_commands: repair
     };
   } catch (error) {
@@ -753,6 +882,10 @@ export const createAssignment = (root, input) => withStoreLock(root, () => {
       manifest_digest: authority.manifest_digest,
       stop_conditions: [...authority.stop_conditions]
     } : null,
+    previous_assignment_id: input.previous_assignment_id ?? null,
+    trigger_report_digest: input.trigger_report_digest ?? null,
+    first_business_result_at: null,
+    first_terminal_fact_at: null,
     acceptance_criteria: input.acceptance_criteria,
     owned_resources: ownedResources,
     forbidden_resources: forbiddenResources,
@@ -800,7 +933,7 @@ const assertUsageWithinBudget = (assignment) => {
     }
   }
   if (assignment.budgets.first_business_result_deadline &&
-    assignment.usage.external_calls === 0 && assignment.usage.test_runs === 0 &&
+    assignment.first_business_result_at === null &&
     Date.now() > Date.parse(assignment.budgets.first_business_result_deadline)) {
     throw new Error("First business result deadline exceeded; Captain decision required");
   }
@@ -900,6 +1033,7 @@ const reserveOwnership = (root, assignment) => {
 export const dispatchAssignment = (root, assignmentId, input) => withStoreLock(root, () => {
   const assignment = readAssignment(root, assignmentId);
   if (!assignment) throw new Error(`Unknown assignment_id: ${assignmentId}`);
+  assertUsageWithinBudget(assignment);
   const worker = readWorker(root, assignment.worker_id);
   if (worker.active_assignment_id && worker.active_assignment_id !== assignmentId) {
     const active = readAssignment(root, worker.active_assignment_id);
@@ -947,6 +1081,7 @@ export const acknowledgeAssignment = (root, assignmentId, acknowledgement) => wi
 
 export const startAssignment = (root, assignmentId) => withStoreLock(root, () => {
   const assignment = readAssignment(root, assignmentId);
+  assertUsageWithinBudget(assignment);
   transition(assignment, "running", ASSIGNMENT_TRANSITIONS, "assignment");
   atomicWriteJson(assignmentPath(root, assignmentId), assignment);
   updateWorker(root, assignment.worker_id, (worker) => ({
@@ -1130,6 +1265,17 @@ const persistReportUnlocked = (root, input) => {
   if (input.attempt_id !== assignment.attempt_id) throw new Error("Stale or foreign attempt_id");
   if (input.ownership_epoch !== assignment.ownership_epoch) throw new Error("Stale ownership_epoch");
   assertTerminalReportContent(input.content);
+  const budgetExceeded = (() => {
+    try {
+      assertUsageWithinBudget(assignment);
+      return null;
+    } catch (error) {
+      return error;
+    }
+  })();
+  if (budgetExceeded && input.content.status === "completed") {
+    throw new Error(`Completed report refused because ${budgetExceeded.message}; persist decision_needed, blocked, or failed instead`);
+  }
   assertReportScope(root, assignment, input.content);
   const revision = assignment.worker_report_revision + 1;
   if (input.report_revision !== revision) throw new Error(`Expected report_revision ${revision}`);
@@ -1163,6 +1309,7 @@ const persistReportUnlocked = (root, input) => {
       next_action_required: null,
       next_action_assignment_id: null,
       next_action_dispatched_at: null,
+      closure_reason: null,
       deferred_reason: null,
       deferred_at: null
     }
@@ -1170,6 +1317,8 @@ const persistReportUnlocked = (root, input) => {
   atomicWriteJson(reportPath(root, input.worker_id, input.assignment_id, revision), report);
   transition(assignment, input.content.status, ASSIGNMENT_TRANSITIONS, "assignment");
   assignment.worker_report_revision = revision;
+  assignment.first_terminal_fact_at ??= now();
+  if (input.content.status === "completed") assignment.first_business_result_at ??= now();
   atomicWriteJson(assignmentPath(root, assignment.assignment_id), assignment);
   invalidateFinalGate(root);
   return report;
@@ -2023,11 +2172,35 @@ export const adjudicateTerminal = (root, input) => withStoreLock(root, () => {
     throw new Error("Invalid terminal adjudication disposition");
   }
   if (typeof input.next_action_required !== "boolean") throw new Error("Adjudication requires next_action_required");
+  const terminalStatus = report.content.status;
+  if (terminalStatus === "completed" && !["accept", "revise", "reject"].includes(input.disposition)) {
+    throw new Error("completed report permits only accept, revise, or reject");
+  }
+  if (["blocked", "failed"].includes(terminalStatus) && !["revise", "reject"].includes(input.disposition)) {
+    throw new Error(`${terminalStatus} report permits only revise or reject`);
+  }
+  if (terminalStatus === "decision_needed" && input.disposition !== "await_decision") {
+    throw new Error("decision_needed report requires await_decision");
+  }
+  if (["revise", "await_decision"].includes(input.disposition) && input.next_action_required !== true) {
+    throw new Error(`${input.disposition} requires a next action`);
+  }
+  if (input.disposition === "reject" &&
+    input.next_action_required === false && (typeof input.closure_reason !== "string" || !input.closure_reason.trim())) {
+    throw new Error("Rejection without a next action requires closure_reason");
+  }
+  if (input.disposition === "accept") {
+    if (terminalStatus !== "completed") throw new Error("Only completed reports can be accepted");
+    if (report.lifecycle.status !== "validated" || report.coordinator_validation?.disposition !== "accepted") {
+      throw new Error("Accept requires an accepted coordinator validation");
+    }
+  }
   const updated = updateReport(root, assignment.worker_id, assignment.assignment_id, revision, (value) => {
     value.handoff.status = "adjudicated";
     value.handoff.adjudicated_at = now();
     value.handoff.disposition = input.disposition;
     value.handoff.next_action_required = input.next_action_required;
+    value.handoff.closure_reason = input.closure_reason?.trim() ?? null;
     return value;
   });
   invalidateFinalGate(root);
@@ -2046,6 +2219,11 @@ export const recordNextActionDispatched = (root, input) => withStoreLock(root, (
   }
   const next = readAssignment(root, input.next_action_assignment_id);
   if (!next || next.status === "draft") throw new Error("Next action must exist and be dispatched");
+  if (next.previous_assignment_id !== assignment.assignment_id ||
+    next.trigger_report_digest !== report.report_digest ||
+    next.parent_decision_id !== assignment.parent_decision_id) {
+    throw new Error("Next action is not bound to the terminal assignment, report digest, and parent decision");
+  }
   const updated = updateReport(root, assignment.worker_id, assignment.assignment_id, revision, (value) => {
     value.handoff.status = "next_action_dispatched";
     value.handoff.next_action_assignment_id = next.assignment_id;
@@ -2193,6 +2371,12 @@ export const closeAssignment = (root, assignmentId, input) => withStoreLock(root
   if (!assignment) throw new Error(`Unknown assignment_id: ${assignmentId}`);
   if (!["integrated", "validated", "failed", "superseded", "rejected"].includes(assignment.status)) {
     throw new Error(`Assignment cannot close from ${assignment.status}`);
+  }
+  const terminalReport = assignment.worker_report_revision > 0
+    ? readReport(root, assignment.worker_id, assignment.assignment_id, assignment.worker_report_revision)
+    : null;
+  if (terminalReport && !["next_action_dispatched", "explicitly_deferred"].includes(terminalReport.handoff?.status)) {
+    throw new Error("Assignment cannot close before terminal handoff adjudication is closed");
   }
   const required = [
     "commit_disposition",

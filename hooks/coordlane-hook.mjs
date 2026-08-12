@@ -363,7 +363,6 @@ const main = async () => {
     return;
   }
   const root = resolution.root;
-  recordHookReceipt(root, { hook: input.hook_event_name ?? "unknown" });
   if (identityMismatch(root, input)) {
     if (input.hook_event_name === "Stop" || input.hook_event_name === "PreToolUse") {
       stopOutput({
@@ -372,6 +371,20 @@ const main = async () => {
       });
     }
     return;
+  }
+  const snapshot = statusSnapshot(root);
+  const role = isCaptainSession(root, input.session_id, input.host_id)
+    ? "captain"
+    : (snapshot.registry.workers.some((worker) =>
+      worker.thread_id === input.session_id && worker.host_id === input.host_id &&
+      !worker.archived && worker.monitored !== false) ? "crew" : null);
+  if (role) {
+    recordHookReceipt(root, {
+      event_type: input.hook_event_name ?? "unknown",
+      role,
+      session_id: input.session_id,
+      host_id: input.host_id
+    });
   }
   if (input.hook_event_name === "PermissionRequest") {
     recordPermissionAttention(root, input.session_id, input.host_id, {
