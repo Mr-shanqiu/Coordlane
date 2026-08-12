@@ -56,6 +56,9 @@ const reportContent = (workerId) => ({
   blockers: [],
   decisions_needed: [],
   recommended_next_action: "Captain validates the synthetic task"
+  ,business_outcome: "Synthetic security result is available"
+  ,diagnostic_shape: []
+  ,coordination_cost: { validation_rounds: 0, test_runs: 0, external_calls: 0 }
 });
 
 const prepareWorker = (root, workerId, threadId = `thread-${workerId}`, hostId = "local") => {

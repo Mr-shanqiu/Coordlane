@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.1.0",
+  "schema_version": "1.2.0",
   "project_id": "fictional-library",
   "assignment_id": "assign-search-01",
   "parent_decision_id": "decision-search-01",
@@ -10,6 +10,19 @@
   "attempt_id": "assign-search-01.r1",
   "attempt_number": 1,
   "objective": "Add local catalog search",
+  "business_goal": "Readers can find a catalog item",
+  "first_value_action": "Return the first matching title",
+  "evidence_needed": ["Targeted tests pass"],
+  "evidence_not_needed": ["Full repository suite"],
+  "risk_tier": "R1",
+  "budgets": {
+    "max_validation_rounds": 2,
+    "max_test_runs": 3,
+    "max_external_calls": 0,
+    "first_business_result_deadline": null
+  },
+  "usage": { "validation_rounds": 0, "test_runs": 1, "external_calls": 0 },
+  "authority": null,
   "acceptance_criteria": ["Targeted tests pass"],
   "owned_resources": ["src/search.js"],
   "forbidden_resources": ["src/app.js"],

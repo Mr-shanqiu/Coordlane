@@ -16,6 +16,7 @@ import {
   recordNotificationFailure,
   recordSessionNotificationDelivery,
   recordPermissionAttention,
+  recordHookReceipt,
   recordSweepObservation,
   statusSnapshot,
   surfacePendingAttention,
@@ -362,6 +363,7 @@ const main = async () => {
     return;
   }
   const root = resolution.root;
+  recordHookReceipt(root, { hook: input.hook_event_name ?? "unknown" });
   if (identityMismatch(root, input)) {
     if (input.hook_event_name === "Stop" || input.hook_event_name === "PreToolUse") {
       stopOutput({

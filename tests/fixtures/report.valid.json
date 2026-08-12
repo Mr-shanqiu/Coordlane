@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.1.0",
+  "schema_version": "1.2.0",
   "project_id": "fictional-library",
   "worker_id": "20",
   "assignment_id": "assign-search-01",
@@ -41,6 +41,9 @@
     "blockers": [],
     "decisions_needed": [],
     "recommended_next_action": "Captain independently validates the change"
+    ,"business_outcome": "Catalog search returns matching books"
+    ,"diagnostic_shape": []
+    ,"coordination_cost": { "validation_rounds": 0, "test_runs": 1, "external_calls": 0 }
   },
   "lifecycle": {
     "status": "durable",
@@ -51,5 +54,15 @@
     "validated_at": null,
     "archived_at": null
   },
-  "coordinator_validation": null
+  "coordinator_validation": null,
+  "handoff": {
+    "status": "needs_adjudication",
+    "adjudicated_at": null,
+    "disposition": null,
+    "next_action_required": null,
+    "next_action_assignment_id": null,
+    "next_action_dispatched_at": null,
+    "deferred_reason": null,
+    "deferred_at": null
+  }
 }

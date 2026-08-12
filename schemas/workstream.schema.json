@@ -13,7 +13,7 @@
     "stop_conditions", "status"
   ],
   "properties": {
-    "schema_version": { "const": "1.1.0" },
+    "schema_version": { "const": "1.2.0" },
     "id": { "$ref": "#/$defs/id" },
     "mission_id": { "$ref": "#/$defs/id" },
     "title": { "$ref": "#/$defs/nonEmpty" },

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/Mr-shanqiu/Coordlane/main/schemas/authority-manifest.schema.json",
+  "title": "Coordlane machine-readable assignment authority manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "authority_id", "revision", "active", "assignment_id",
+    "worker_id", "owned_resources", "forbidden_resources", "shared_entrypoints",
+    "stop_conditions", "manifest_digest"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.2.0" },
+    "authority_id": { "$ref": "#/$defs/id" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "active": { "const": true },
+    "assignment_id": { "$ref": "#/$defs/id" },
+    "worker_id": { "$ref": "#/$defs/id" },
+    "owned_resources": { "$ref": "#/$defs/strings" },
+    "forbidden_resources": { "$ref": "#/$defs/strings" },
+    "shared_entrypoints": { "$ref": "#/$defs/strings" },
+    "stop_conditions": { "$ref": "#/$defs/strings" },
+    "manifest_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+    "nonEmpty": { "type": "string", "minLength": 1 },
+    "strings": { "type": "array", "items": { "$ref": "#/$defs/nonEmpty" }, "uniqueItems": true }
+  }
+}

@@ -6,8 +6,10 @@ import { spawnSync } from "node:child_process";
 
 import {
   acknowledgeAssignment,
+  adjudicateTerminal,
   createAssignment,
   createWorker,
+  deferNextAction,
   dispatchAssignment,
   emitEvent,
   initProject,
@@ -108,6 +110,9 @@ const persistTerminal = (root, suffix) => {
       blockers: [],
       decisions_needed: [],
       recommended_next_action: "Captain validates the synthetic result"
+      ,business_outcome: "Synthetic hook result is available"
+      ,diagnostic_shape: []
+      ,coordination_cost: { validation_rounds: 0, test_runs: 0, external_calls: 0 }
     }
   });
   return emitEvent(root, {
@@ -146,7 +151,7 @@ try {
   assert.equal(missing.decision, "block");
   assert.match(missing.reason, /persist and validate the durable report/);
 
-  persistTerminal(normal, "normal");
+  const normalEvent = persistTerminal(normal, "normal");
   const needsDelivery = runHook(normal, {
     hook_event_name: "Stop",
     session_id: "worker-thread",
@@ -210,6 +215,18 @@ try {
   });
   assert.equal(allowed.continue, true);
   assert.equal(preFinalGate(normal).final_gate_passed, false);
+  adjudicateTerminal(normal, {
+    assignment_id: normalEvent.assignment_id,
+    report_revision: normalEvent.report_revision,
+    report_digest: normalEvent.report_digest,
+    disposition: "accept",
+    next_action_required: false
+  });
+  deferNextAction(normal, {
+    assignment_id: normalEvent.assignment_id,
+    report_revision: normalEvent.report_revision,
+    reason: "Synthetic hook result needs no next action"
+  });
 
   runHook(normal, {
     hook_event_name: "UserPromptSubmit",
@@ -341,6 +358,29 @@ try {
     }
   });
   assert.equal(operatorAllowed, null);
+  for (const operation of [
+    "bootstrap",
+    "doctor",
+    "bind-captain",
+    "derive-assignment",
+    "record-usage",
+    "drain-status",
+    "adjudicate",
+    "dispatch-next",
+    "defer-next"
+  ]) {
+    const allowed034Operator = runHook(normal, {
+      hook_event_name: "PreToolUse",
+      session_id: "captain-thread",
+      turn_id: "captain-turn-1",
+      cwd: "/tmp/coordlane-fictional",
+      tool_name: "exec_command",
+      tool_input: {
+        cmd: `${JSON.stringify(process.execPath)} ${JSON.stringify(path.resolve("bin/coordlane.mjs"))} ${operation} ${JSON.stringify(normal)}`
+      }
+    });
+    assert.equal(allowed034Operator, null, `0.3.4 operator ${operation} must pass the Captain Hook allowlist`);
+  }
   assert.equal(preFinalGate(normal).final_gate_passed, false);
   runHook(normal, {
     hook_event_name: "PostToolUse",

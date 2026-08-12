@@ -14,7 +14,7 @@
     "user_interrupted"
   ],
   "properties": {
-    "schema_version": { "const": "1.1.0" },
+    "schema_version": { "const": "1.2.0" },
     "event_id": { "$ref": "#/$defs/nonEmpty" },
     "idempotency_key": { "$ref": "#/$defs/nonEmpty" },
     "sequence": { "type": "integer", "minimum": 1 },

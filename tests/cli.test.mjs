@@ -115,6 +115,9 @@ try {
       blockers: [],
       decisions_needed: [],
       recommended_next_action: "Captain validates the CLI fixture"
+      ,business_outcome: "Synthetic CLI result is available"
+      ,diagnostic_shape: []
+      ,coordination_cost: { validation_rounds: 0, test_runs: 0, external_calls: 0 }
     }
   });
   assert.equal(terminal.event.report_digest, terminal.report.report_digest);

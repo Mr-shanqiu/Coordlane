@@ -38,8 +38,13 @@ Coordlane 有意保持比 Agent IDE、自治 Swarm 或通用软件开发方法�
 - **审批不会被静默隐藏。** Codex `PermissionRequest` 只记录为脱敏的非终态
   Attention，并由 Captain 提示用户；Crew 原生批准窗口继续保留，Coordlane
   不会静默拒绝或自动批准。
-- **先有证据，再合流。** 独立 Validator 产出复验证据，只有一个得到授权的
+- **按风险取证，再合流。** R2 与触及共享/安全边界的 R1 使用独立 Validator；
+  有界只读 R0 由 Captain 审阅，不进入强制 Validator 循环。只有一个得到授权的
   Dock Crew 可以写入合流结果。
+- **先拿业务结果，再做仪式。** Assignment 声明风险层级、首个价值动作和需要/
+  不需要的证据，只硬性执行 operator 能可信记录的验证轮次、测试次数和外部调用数。
+- **不静默伪装启用。** Skill 被加载不等于项目已接入。`doctor` 会在状态仓、Hook
+  回执、Captain 绑定或 operator 缺失时亮红灯并给出精确修复命令。
 - **不靠持续消耗额度换可靠性。** Coordlane 没有心跳、daemon、重试轮询或后台
   AI 巡逻，只使用有上限的增量快照；通知失败时让事件保持持久，等待 Captain
   下个回合恢复。
@@ -70,8 +75,10 @@ Coordlane 有意保持比 Agent IDE、自治 Swarm 或通用软件开发方法�
   命令；只允许协调工具和不含 shell 控制符的 Coordlane operator 调用。
 - 内置本地 operator 会自行取得 Git 派发证据，并一次生成 durable report/event，
   不要求 AI 临时编写状态脚本。
-- 可执行 finalizer 会拒绝缺少本回合全 registry 扫描、freshness 未知或仍有
-  未读终态结果的 final 输出。
+- 可执行 finalizer 会拒绝缺少本回合全 registry 扫描、freshness 未知、仍有
+  未读终态，或已消费终态尚未裁定/派发下一动作/明确挂起的 final 输出。
+- 机器可读 authority manifest 通过 digest 派生文件锁和停止条件；Captain 手填
+  的冲突路径会被拒绝。
 - Crew 自报测试与 Validator 产出、Captain 审阅的独立证据分开。
 - 显式选择临时 cherry-pick 或长期 merge 分支策略，禁止混用。
 - 记录来源提交与合流提交；“完成”不等于释放、上线或整个 Mission 完成。
@@ -93,11 +100,12 @@ Coordlane 有意保持比 Agent IDE、自治 Swarm 或通用软件开发方法�
 - 一个可安装的 Codex 插件，内置 [`coordlane` Skill](skills/coordlane/SKILL.md)；
 - 经过审阅后启用的 `PreToolUse`、`Stop` 和 `PostToolUse` 生命周期 [Hooks](hooks/hooks.json)；
 - Captain、Crew、报告和项目地图[模板](templates/)；
-- 7 个机器可读 [Schema](schemas/)；
+- 8 个机器可读 [Schema](schemas/)，包括 authority manifest；
 - Node.js 标准库实现的[文件状态仓参考](reference/README.md)；
 - 支持的本地状态操作入口 [`bin/coordlane.mjs`](bin/coordlane.mjs)；
 - 当前宿主的 [Codex desktop 适配器](adapters/codex/README.md)；
-- 15 个真实失败场景，以及 worktree、伪回执、身份冲突、额度和并发写入对抗测试。
+- 15 个原始失败场景，以及现场 P0、worktree、伪回执、身份冲突、额度、迁移和
+  并发写入对抗测试。
 
 本项目不提供服务器、daemon、定时心跳、遥测、对话保存、密钥处理、自动
 合并、自动迁移、自动部署、自动发布或运行开关切换。插件 Hook 只有在用户
@@ -111,9 +119,10 @@ Coordlane 有意保持比 Agent IDE、自治 Swarm 或通用软件开发方法�
 Crew 时先尝试一次 `timeoutMs=0` 批量快照，只补扫返回中缺失的目标。无变化时
 保持静默，也不重复读取完整报告。
 
-Coordlane 不再要求每个 assignment 填写 Token、CPU、网络或外部调用额度；这些
-属于具体项目策略。核心契约只保留范围、所有权、依赖、验证以及运行和外部副作用
-授权。额度保护只约束 Coordlane 自己产生的协调开销。
+Coordlane 不会把宿主无法可靠观测的 Token、CPU、通用工具耗时或网络预算伪装成
+硬门禁。0.3.4 只硬性执行 operator 能记录的验证轮次、测试次数、有界外部调用数，
+以及首个业务结果期限。这些限制用于阻止协调循环，不会新增心跳、轮询或模型调用。
+证据缓存属于 P1，0.3.4 不宣称已经实现。
 
 ## 快速开始
 
@@ -137,6 +146,12 @@ node reference/coordlane.mjs init-repo . fictional-library
 STATE_DIR="$(node reference/coordlane.mjs state-path .)"
 node reference/coordlane.mjs bind-captain "$STATE_DIR" captain-thread local
 node reference/coordlane.mjs status "$STATE_DIR"
+```
+
+开始协调前必须执行只读健康检查；只加载 Skill 不代表 Coordlane 已启用：
+
+```sh
+node bin/coordlane.mjs doctor "$STATE_DIR"
 ```
 
 注册、派单、Git 实证预检、ACK、终态报告与事件、验证、合流记录、释放和状态

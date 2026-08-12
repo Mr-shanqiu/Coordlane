@@ -13,6 +13,12 @@ alternate path; an explicitly configured missing store must fail closed.
 
 ## Preserve Captain availability
 
+Before any coordination action, run `doctor` against the intended state
+directory. Skill loaded is not Coordlane enabled. If `doctor.health` is red,
+stop and surface its exact repair commands; do not silently fall back to chat
+memory. `bootstrap` is explicit and idempotent and must target only the
+user-approved project state directory.
+
 The Captain is a non-blocking control plane. It communicates with the user,
 maintains coordination state, takes zero-time snapshots, dispatches bounded
 Assignments, reviews structured evidence, and authorizes state transitions. It
@@ -57,7 +63,12 @@ terminal writes, and general shell commands even after Turn-entry passes.
    cursor. Never route by title.
 5. **Create the assignment.** Record `assignment_id`, `parent_decision_id`,
    `scope_version`, `attempt_id`, `origin`, ownership epoch, acceptance,
-   forbidden resources and one branch policy.
+   forbidden resources and one branch policy. Declare R0/R1/R2,
+   `business_goal`, `first_value_action`, `evidence_needed`, and
+   `evidence_not_needed`. Enforce only `max_validation_rounds`,
+   `max_test_runs`, and `max_external_calls`, plus
+   `first_business_result_deadline`; never claim token, CPU, generic tool, or
+   network accounting that the host cannot prove.
 6. **Preflight before dispatch.** Block writes on dirty or wrong workspace,
    overlap, unmet dependency, unsafe runtime, or unsettled truth. Unsettled
    truth permits only read-only audit or skeleton work.
@@ -81,8 +92,12 @@ terminal writes, and general shell commands even after Turn-entry passes.
    Attention. Keep the Assignment `running`, retain the native approval UI,
    store no raw tool input, and surface the redacted request once in the active
    Captain turn. Do not auto-approve or hide an unacknowledged request.
-9. **Validate independently.** Assign evidence-producing checks to a bounded
-   Validator Crew. Review its subject HEAD, scope, diff findings, proportional
+9. **Validate proportionally.** R0 bounded read-only work gets one preflight,
+   at most one targeted validation before first value, and no mandatory
+   independent Validator. R1 uses targeted checks and an independent Validator
+   only for shared or safety boundaries. R2 production, destructive, money,
+   permission, or real-data work requires full Validator/Dock gates. Review
+   subject HEAD, scope, diff findings, proportional
    test results, overlap, secrets, runtime state, and side effects, then accept,
    request revision, or reject. Worker-reported passing tests are not
    independently validated evidence, and the Captain does not run the checks.
@@ -93,7 +108,12 @@ terminal writes, and general shell commands even after Turn-entry passes.
     record source and integrated commits. Never auto-reset, rebase, force,
     merge, deploy, migrate, publish, or switch runtime state. Release ownership
     only with complete evidence.
-11. **Pre-final full sweep.** After completing the core answer and before the
+11. **Adjudicate terminal results.** A full drain consumes every event through
+    one fixed high-water mark. Every consumed terminal report enters
+    `needs_adjudication`; record a disposition, then either bind a dispatched
+    next Assignment or explicitly defer it with a reason. Discovery and
+    consumption alone do not close the result.
+12. **Pre-final full sweep.** After completing the core answer and before the
     final response, invoke the executable finalization gate even when the user
     question is unrelated to Crew work. The gate must scan the full monitored
     registry, not only a numeric wake source, and write `last_sweep_at`,
@@ -116,9 +136,11 @@ bounded Pre-final snapshot is required.
 Resolve the plugin root as the directory two levels above this `SKILL.md`, then
 run the exact current Node executable and real plugin operator path:
 `<process.execPath> <plugin-root>/bin/coordlane.mjs`. The supported commands are
-`create-worker`, `create-assignment`, `dispatch`, `record-delivery`,
-`acknowledge`, `start`, `terminal`, `sweep`, `validate`, `integrate`, `close`,
-`archive`, and `status`. Each command takes the state directory and an optional
+`bootstrap`, `doctor`, `bind-captain`, `create-worker`, `create-assignment`,
+`derive-assignment`, `dispatch`, `record-delivery`, `acknowledge`, `start`,
+`record-usage`, `terminal`, `sweep`, `drain-status`, `adjudicate`,
+`dispatch-next`, `defer-next`, `validate`, `integrate`, `close`, `archive`, and
+`status`. Each command takes the state directory and an optional
 JSON file or `-` for JSON stdin. Do not use ad-hoc `node -e` imports to mutate
 the store. `terminal` is a Crew producer operation and is not permitted from a
 bound Captain task. `validate` and `integrate` record reviewed Crew evidence;
@@ -162,6 +184,8 @@ sweep. Never create recurring heartbeat automations.
 - Attention: `none -> pending -> resolved`, orthogonal to Assignment state.
 - Report: `building -> durable -> notified/discovered -> consumed -> validated
   -> archived`.
+- Terminal handoff: `needs_adjudication -> adjudicated ->
+  next_action_dispatched | explicitly_deferred`.
 - Notification: `pending -> delivered -> acknowledged`.
 - Never mark integrated without Captain validation.
 - Never treat `completed` as Mission complete, released, integrated, deployed,

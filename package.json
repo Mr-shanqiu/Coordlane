@@ -1,12 +1,12 @@
 {
   "name": "coordlane",
-  "version": "0.3.3-dev",
+  "version": "0.3.4-dev",
   "private": true,
   "description": "Protocol-first coordination for auditable multi-agent project work",
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "test": "node tests/validate.mjs && node tests/reference.test.mjs && node tests/hooks.test.mjs && node tests/security-regressions.test.mjs && node tests/cli.test.mjs && node tests/codex-adapter.test.mjs",
+    "test": "node tests/validate.mjs && node tests/reference.test.mjs && node tests/field-p0.test.mjs && node tests/hooks.test.mjs && node tests/security-regressions.test.mjs && node tests/cli.test.mjs && node tests/codex-adapter.test.mjs",
     "test:schemas": "node tests/validate.mjs",
     "test:scenarios": "node tests/reference.test.mjs",
     "test:codex": "node tests/hooks.test.mjs && node tests/security-regressions.test.mjs && node tests/cli.test.mjs && node tests/codex-adapter.test.mjs"

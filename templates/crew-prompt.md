@@ -8,6 +8,10 @@ You are Coordlane Crew `{worker_id}`. Execute only assignment
 ## Contract
 
 - Objective and acceptance: `{objective_and_acceptance}`
+- Business goal / first-value action: `{business_goal_and_first_value_action}`
+- Risk tier: `{R0|R1|R2}`
+- Evidence needed / not needed: `{evidence_boundary}`
+- Hard counters: `{max_validation_rounds|max_test_runs|max_external_calls|first_business_result_deadline}`
 - Workspace / branch / baseline: `{workspace_branch_baseline}`
 - Branch policy: `{ephemeral-cherry-pick|persistent-merge}`
 - Owned resources: `{owned_resources}`
@@ -35,7 +39,9 @@ the requested operation.
 
 Before declaring a terminal state, run proportional checks, verify the reported
 HEAD, commit or explain no commit, record all modified or occupied files,
-runtime processes and cleanup, side effects, and secret exposure. Atomically
+runtime processes and cleanup, side effects, secret exposure, actual counter
+usage, business outcome, and any diagnostic shape using only path/type/count/
+presence metadata. Atomically
 persist the complete report as a new `report_revision`; only then emit its
 digest-bound event. Use
 `{node_executable} {plugin_root}/bin/coordlane.mjs terminal {state_store} {report_payload}`

@@ -5,18 +5,24 @@ import path from "node:path";
 
 import {
   SCHEMA_VERSION,
+  adjudicateTerminal,
   acknowledgeAssignment,
   archiveWorker,
   assertFinalizable,
+  authorityManifestDigest,
   beginTurn,
   bindCaptain,
   closeAssignment,
   createAssignment,
+  createAssignmentFromAuthority,
   createWorker,
+  deferNextAction,
   deliverNotification,
+  doctor,
   dispatchAssignment,
   emitEvent,
   fullSweep,
+  drainStatus,
   initProject,
   integrateChange,
   notificationPolicy,
@@ -27,6 +33,7 @@ import {
   readReport,
   readWorker,
   recordDelivery,
+  recordAssignmentUsage,
   recordExternalAssignment,
   recordNotificationFailure,
   recordSweepObservation,
@@ -118,6 +125,9 @@ const content = (workerId, status = "completed", overrides = {}) => ({
   blockers: status === "blocked" || status === "failed" ? ["Synthetic blocker"] : [],
   decisions_needed: status === "decision_needed" ? ["Choose a synthetic option"] : [],
   recommended_next_action: "Captain validates the result",
+  business_outcome: status === "completed" ? "The assigned business result is available" : "No business result yet",
+  diagnostic_shape: [],
+  coordination_cost: { validation_rounds: 0, test_runs: 0, external_calls: 0 },
   ...overrides
 });
 
@@ -131,6 +141,7 @@ const persist = (root, workerId, assignmentId, revision = 1, status = "completed
     report_revision: revision,
     content: content(workerId, status, {
       modified_or_owned_files: [`src/${assignmentId}`],
+      coordination_cost: structuredClone(assignment.usage),
       ...overrides
     })
   });
@@ -370,7 +381,7 @@ test("safety: validation and integration bind the exact report HEAD and digest",
   assert.equal(readAssignment(root, "binding-01").status, "validated");
 });
 
-test("compatibility: a v0.3.2 schema 1.0.0 store migrates atomically to 1.1.0", () => {
+test("compatibility: a v0.3.2 schema 1.0.0 store migrates atomically to 1.2.0", () => {
   const root = makeRoot();
   addWorker(root);
   start(root, "20", "legacy-store");
@@ -400,6 +411,15 @@ test("compatibility: a v0.3.2 schema 1.0.0 store migrates atomically to 1.1.0", 
       delete value.coordinator_validation.report_digest;
       delete value.coordinator_validation.subject_head;
     }
+    if (filePath.includes(`${path.sep}reports${path.sep}`)) {
+      delete value.content.business_outcome;
+      delete value.content.diagnostic_shape;
+      delete value.content.coordination_cost;
+      delete value.handoff;
+    }
+    if (filePath.includes(`${path.sep}assignments${path.sep}`)) {
+      for (const key of ["business_goal", "first_value_action", "evidence_needed", "evidence_not_needed", "risk_tier", "budgets", "usage", "authority"]) delete value[key];
+    }
     if (filePath.includes(`${path.sep}assignments${path.sep}`) && value.integration) {
       delete value.integration.decision_id;
       delete value.integration.target_branch;
@@ -413,10 +433,12 @@ test("compatibility: a v0.3.2 schema 1.0.0 store migrates atomically to 1.1.0", 
   assert.equal(migrated.project.schema_version, SCHEMA_VERSION);
   assert.equal(migrated.ledger.schema_version, SCHEMA_VERSION);
   assert.equal(migrated.ledger.pending_attention_count, 0);
+  assert.equal(migrated.ledger.pending_adjudication_count, 0);
   assert.equal(migrated.ledger.workers[0].attention, null);
   assert.ok(jsonFiles(root).every((filePath) =>
     JSON.parse(fs.readFileSync(filePath, "utf8")).schema_version === SCHEMA_VERSION));
   const migratedAssignment = readAssignment(root, "legacy-store");
+  assert.equal(migratedAssignment.business_goal, "Complete legacy-store");
   assert.equal(migratedAssignment.integration.decision_id, "decision-legacy-store");
   assert.equal(migratedAssignment.integration.target_branch, "legacy-unrecorded");
   assert.equal(migratedAssignment.integration.report_revision, 1);
@@ -595,12 +617,28 @@ test("incident: pre-final gate ingests four completions during an unrelated answ
   }
   assert.throws(() => assertFinalizable(root), /Finalization refused/);
   const gate = preFinalGate(root, { batch_size: 2 });
-  assert.equal(gate.final_gate_passed, true);
+  assert.equal(gate.final_gate_passed, false);
   assert.equal(gate.freshness, "fresh");
   assert.equal(gate.unread_terminal_count, 0);
   assert.deepEqual(new Set(gate.consumed.map((event) => event.worker_id)), new Set(["30", "35", "40", "50"]));
   assert.ok(gate.consumed.every((event) => !("content" in event)), "notification batch leaked raw report content");
   assert.equal(new Set(gate.consumed.map((event) => event.idempotency_key)).size, 4);
+  assert.equal(gate.pending_adjudication_count, 4);
+  for (const event of gate.consumed) {
+    adjudicateTerminal(root, {
+      assignment_id: event.assignment_id,
+      report_revision: event.report_revision,
+      report_digest: event.report_digest,
+      disposition: "accept",
+      next_action_required: false
+    });
+    deferNextAction(root, {
+      assignment_id: event.assignment_id,
+      report_revision: event.report_revision,
+      reason: "No further action is needed for the synthetic result"
+    });
+  }
+  assert.equal(preFinalGate(root).final_gate_passed, true);
   assert.equal(assertFinalizable(root).allowed, true);
 });
 

@@ -1,16 +1,27 @@
 # Implementation self-audit
 
-Last audited: 2026-08-11
+Last audited: 2026-08-12
 
 ## Runnable now
 
-- Seven JSON Schemas and valid/invalid validation checks.
+- Eight JSON Schemas and valid/invalid validation checks, including a
+  digest-bound machine-readable authority manifest.
 - A Node.js filesystem reference implementing registry, assignments,
   acknowledgement, ownership, reports, events, cursors, full sweeps,
   validation, branch-policy checks, release, and recovery.
 - A supported local operator for registration, assignment lifecycle, Git-derived
   dispatch preflight, snapshot-based ACK, combined terminal report/event
   production, validation, integration recording, release, archive, and status.
+- Explicit idempotent `bootstrap` and read-only `doctor`. Loading the bundled
+  Skill is not enrollment; missing store, Hook receipt, Captain binding, or
+  operator state produces a red result and repair commands.
+- R0/R1/R2 policy, business-progress fields, and hard enforcement only for
+  validation rounds, test runs, bounded external calls, and first-result
+  deadline. No background query or model loop was added.
+- Terminal consumption now has an executable adjudication queue and refuses
+  finalization until the next action is dispatched or explicitly deferred.
+- Assignment locks can be derived only from a current digest-bound JSON
+  authority manifest; natural-language task documents are not parsed.
 - Fifteen executable failure scenarios plus adversarial worktree, false-receipt,
   stable-identity, idle-quota, explicit-missing-store, and concurrent-writer
   regressions.
@@ -33,15 +44,15 @@ Last audited: 2026-08-11
   Validator and Dock execution remain bounded Crew responsibilities.
 - Shared Git-common-directory state for linked worktrees, mode-0700 directories,
   bounded cross-process mutation locking, and interrupted-write recovery.
-- Store schema `1.1.0` plus a tested, locked `1.0.0` compatibility migration.
+- Store schema `1.2.0` plus tested, locked `1.0.0` and `1.1.0` compatibility migration.
   It rewrites records atomically, recomputes report/event digest bindings, and
   writes the project version last so an interrupted migration can resume.
   Normal reads require every project, registry, ledger, ownership, assignment,
-  report, and event record to be `1.1.0`; mixed, missing, unknown, or future
+  report, and event record to be `1.2.0`; mixed, missing, unknown, or future
   child versions fail closed before status, sweep, or Hook processing.
-- Assignment and Workstream contracts contain no mandatory task token, CPU,
-  network, or external-call quotas. The only enforced call limit bounds
-  Coordlane's own live-snapshot overhead.
+- Host token, CPU, generic tool-time, and network accounting is not claimed.
+  The operator enforces only counters it can record reliably. Evidence caching
+  by commit/scope/digest remains P1 deferred.
 - Terminal persistence rejects unowned or prohibited files, mismatched registered
   workspace/branch/HEAD, validation against another HEAD, and undeclared
   external side effects. File ownership aliases are normalized conservatively.

@@ -47,7 +47,15 @@ Its core advantage is the combination of these reliability boundaries:
   redacted nonterminal signal and surfaced by the Captain while the native Crew
   approval remains visible; Coordlane does not silently deny or auto-approve.
 - **Evidence before integration.** A separate Validator produces independent
-  evidence and one authorized Dock Crew is the only integration writer.
+  evidence for R2 and boundary-sensitive R1 work; bounded R0 read-only work
+  uses Captain review without a mandatory Validator loop. One authorized Dock
+  Crew remains the only integration writer.
+- **Business progress before ceremony.** Assignments declare a risk tier, first
+  value action, needed and unneeded evidence, and enforce only validation, test,
+  and external-call counts that the local operator can actually record.
+- **No silent activation.** Loading the Skill is not enrollment. `doctor` shows
+  a red result with exact repair commands when the state store, Hook receipt,
+  Captain binding, or operator path is missing.
 - **Reliability without recurring quota spend.** Coordlane has no heartbeat,
   daemon, retry polling, or background AI patrol. It uses bounded incremental
   snapshots and leaves a failed notification durable for the next Captain turn.
@@ -83,7 +91,11 @@ small Codex-native coordination safety layer. See the dated
 - A bundled local operator derives Git preflight evidence and atomically
   produces terminal report/event state without ad-hoc agent scripts.
 - An executable finalizer refuses an answer when the current turn lacks a fresh
-  registry-wide Pre-final sweep or terminal results remain unread.
+  registry-wide Pre-final sweep, terminal results remain unread, or a consumed
+  terminal result has not been adjudicated and closed with a dispatched or
+  explicitly deferred next action.
+- Machine-readable authority manifests derive file locks and stop conditions;
+  Captain-supplied paths that drift from the digest-bound authority are refused.
 - Validator evidence reviewed by the Captain is separate from worker-reported tests.
 - Explicit branch policy prevents cherry-pick and persistent-workstream history
   from being mixed.
@@ -110,12 +122,12 @@ Read the [architecture](docs/architecture.md),
 - one installable Codex plugin with a bundled [`coordlane` Skill](skills/coordlane/SKILL.md);
 - reviewed `PreToolUse`, `Stop`, and `PostToolUse` lifecycle [Hooks](hooks/hooks.json);
 - Captain, Crew, report, and project-map [`templates/`](templates/);
-- seven machine-readable [`schemas/`](schemas/);
+- eight machine-readable [`schemas/`](schemas/), including authority manifests;
 - a Node.js standard-library [filesystem reference](reference/README.md);
 - a supported local state operator at [`bin/coordlane.mjs`](bin/coordlane.mjs);
 - a current-host [Codex desktop adapter](adapters/codex/README.md); and
-- 15 executable failure scenarios plus adversarial worktree, receipt, identity,
-  quota, and concurrent-writer regression checks.
+- 15 original failure scenarios plus field P0, worktree, receipt, identity,
+  quota, migration, and concurrent-writer regression checks.
 
 Coordlane ships no server, daemon, scheduled heartbeat, telemetry, transcript
 store, secret handler, automatic merge, deployment, migration, release, or
@@ -132,10 +144,12 @@ calls. With active Crew, Coordlane tries one batched `timeoutMs=0` snapshot and
 only asks for missing targets individually; unchanged results stay silent and
 full reports are not reread.
 
-Coordlane does not require per-assignment token, CPU, network, or external-call
-quotas. Those are project-specific concerns. The core contract keeps only scope,
-ownership, dependencies, validation, and explicit runtime/external-side-effect
-authority; quota protection applies to Coordlane's own coordination overhead.
+Coordlane does not claim to hard-enforce host token, CPU, wall-clock tool, or
+network budgets it cannot reliably observe. It does enforce the three counters
+its operator can record without background activity: validation rounds, test
+runs, and bounded external calls, plus a first-business-result deadline. These
+limits stop coordination loops; they do not add heartbeat, polling, or model
+calls. Evidence caching remains P1 and is not claimed in 0.3.4.
 
 ## Quick start
 
@@ -161,6 +175,13 @@ node reference/coordlane.mjs init-repo . fictional-library
 STATE_DIR="$(node reference/coordlane.mjs state-path .)"
 node reference/coordlane.mjs bind-captain "$STATE_DIR" captain-thread local
 node reference/coordlane.mjs status "$STATE_DIR"
+```
+
+Before coordinating, run the read-only health check. Loading the Skill alone
+does not enable Coordlane:
+
+```sh
+node bin/coordlane.mjs doctor "$STATE_DIR"
 ```
 
 Use `node bin/coordlane.mjs <command> "$STATE_DIR" <payload.json>` for

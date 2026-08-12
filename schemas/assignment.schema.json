@@ -7,14 +7,16 @@
   "required": [
     "schema_version", "project_id", "assignment_id", "parent_decision_id",
     "worker_id", "origin", "scope_version", "ownership_epoch", "attempt_id",
-    "attempt_number", "objective", "acceptance_criteria", "owned_resources",
+    "attempt_number", "objective", "business_goal", "first_value_action",
+    "evidence_needed", "evidence_not_needed", "risk_tier", "budgets", "usage", "authority",
+    "acceptance_criteria", "owned_resources",
     "forbidden_resources", "shared_entrypoints", "dependencies", "branch_policy",
     "execution_mode", "external_side_effects", "preflight", "status", "delivery",
     "acknowledgement", "worker_report_revision", "coordinator_disposition",
     "coordinator_checks", "integration", "created_at", "updated_at"
   ],
   "properties": {
-    "schema_version": { "const": "1.1.0" },
+    "schema_version": { "const": "1.2.0" },
     "project_id": { "$ref": "#/$defs/id" },
     "assignment_id": { "$ref": "#/$defs/id" },
     "parent_decision_id": { "$ref": "#/$defs/id" },
@@ -25,6 +27,14 @@
     "attempt_id": { "$ref": "#/$defs/id" },
     "attempt_number": { "type": "integer", "minimum": 1 },
     "objective": { "$ref": "#/$defs/nonEmpty" },
+    "business_goal": { "$ref": "#/$defs/nonEmpty" },
+    "first_value_action": { "$ref": "#/$defs/nonEmpty" },
+    "evidence_needed": { "$ref": "#/$defs/nonEmptyStrings" },
+    "evidence_not_needed": { "$ref": "#/$defs/strings" },
+    "risk_tier": { "enum": ["R0", "R1", "R2"] },
+    "budgets": { "$ref": "#/$defs/budgets" },
+    "usage": { "$ref": "#/$defs/usage" },
+    "authority": { "oneOf": [{ "$ref": "#/$defs/authority" }, { "type": "null" }] },
     "acceptance_criteria": { "$ref": "#/$defs/nonEmptyStrings" },
     "owned_resources": { "$ref": "#/$defs/strings" },
     "forbidden_resources": { "$ref": "#/$defs/strings" },
@@ -125,6 +135,38 @@
         "report_revision": { "type": "integer", "minimum": 1 },
         "report_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
         "integrated_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "budgets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_validation_rounds", "max_test_runs", "max_external_calls", "first_business_result_deadline"],
+      "properties": {
+        "max_validation_rounds": { "type": "integer", "minimum": 0 },
+        "max_test_runs": { "type": "integer", "minimum": 0 },
+        "max_external_calls": { "type": "integer", "minimum": 0 },
+        "first_business_result_deadline": { "type": ["string", "null"], "format": "date-time" }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["validation_rounds", "test_runs", "external_calls"],
+      "properties": {
+        "validation_rounds": { "type": "integer", "minimum": 0 },
+        "test_runs": { "type": "integer", "minimum": 0 },
+        "external_calls": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authority_id", "revision", "manifest_digest", "stop_conditions"],
+      "properties": {
+        "authority_id": { "$ref": "#/$defs/id" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "manifest_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "stop_conditions": { "$ref": "#/$defs/strings" }
       }
     }
   }

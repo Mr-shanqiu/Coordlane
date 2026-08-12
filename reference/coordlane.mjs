@@ -7,8 +7,8 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { gitSharedStateRoot, pluginProjectStateRoot } from "./state-root.mjs";
 
-export const SCHEMA_VERSION = "1.1.0";
-const LEGACY_SCHEMA_VERSION = "1.0.0";
+export const SCHEMA_VERSION = "1.2.0";
+const LEGACY_SCHEMA_VERSIONS = new Set(["1.0.0", "1.1.0"]);
 
 export const ASSIGNMENT_TRANSITIONS = Object.freeze({
   draft: ["dispatched", "superseded"],
@@ -50,6 +50,12 @@ const TERMINAL_REPORT_STATUSES = new Set([
   "decision_needed",
   "failed"
 ]);
+
+const RISK_POLICIES = Object.freeze({
+  R0: { independent_validation: "not_required", max_validation_rounds: 1, max_test_runs: 1, max_external_calls: 2 },
+  R1: { independent_validation: "boundary_only", max_validation_rounds: 2, max_test_runs: 3, max_external_calls: 0 },
+  R2: { independent_validation: "required", max_validation_rounds: 3, max_test_runs: 5, max_external_calls: 0 }
+});
 
 const now = () => new Date().toISOString();
 
@@ -147,7 +153,8 @@ const storePaths = (root) => ({
   ownership: path.join(root, "ownership.json"),
   assignments: path.join(root, "assignments"),
   reports: path.join(root, "reports"),
-  events: path.join(root, "events")
+  events: path.join(root, "events"),
+  hookReceipt: path.join(root, "hook-receipt.json")
 });
 
 const rawJsonFiles = (directory) => {
@@ -161,7 +168,7 @@ const rawJsonFiles = (directory) => {
 };
 
 const assertKnownSchemaVersion = (record, label) => {
-  if (![LEGACY_SCHEMA_VERSION, SCHEMA_VERSION].includes(record?.schema_version)) {
+  if (![...LEGACY_SCHEMA_VERSIONS, SCHEMA_VERSION].includes(record?.schema_version)) {
     throw new Error(`Unsupported future or unknown Coordlane schema_version for ${label}: ${record?.schema_version ?? "missing"}`);
   }
 };
@@ -206,6 +213,29 @@ const migrateStoreUnlocked = (root) => {
     const report = readJson(filePath);
     assertKnownSchemaVersion(report, `report ${filePath}`);
     report.schema_version = SCHEMA_VERSION;
+    report.content.business_outcome ??= "unknown_legacy";
+    report.content.diagnostic_shape ??= [];
+    report.content.coordination_cost ??= {
+      validation_rounds: 0,
+      test_runs: 0,
+      external_calls: 0
+    };
+    report.handoff ??= {
+      status: ["validated", "archived"].includes(report.lifecycle?.status)
+        ? "adjudicated"
+        : "needs_adjudication",
+      adjudicated_at: ["validated", "archived"].includes(report.lifecycle?.status)
+        ? (report.lifecycle?.validated_at ?? report.lifecycle?.archived_at ?? now())
+        : null,
+      disposition: ["validated", "archived"].includes(report.lifecycle?.status)
+        ? (report.coordinator_validation?.disposition ?? "accepted")
+        : null,
+      next_action_required: false,
+      next_action_assignment_id: null,
+      next_action_dispatched_at: null,
+      deferred_reason: null,
+      deferred_at: null
+    };
     if (report.coordinator_validation) {
       report.coordinator_validation.report_revision ??= report.report_revision;
       report.coordinator_validation.subject_head ??= report.content?.workspace?.head;
@@ -232,6 +262,18 @@ const migrateStoreUnlocked = (root) => {
     const assignment = readJson(filePath);
     assertKnownSchemaVersion(assignment, `assignment ${filePath}`);
     assignment.schema_version = SCHEMA_VERSION;
+    assignment.risk_tier ??= "R1";
+    assignment.business_goal ??= assignment.objective ?? "unknown_legacy";
+    assignment.first_value_action ??= "unknown_legacy";
+    assignment.evidence_needed ??= assignment.acceptance_criteria ?? ["unknown_legacy"];
+    assignment.evidence_not_needed ??= [];
+    assignment.budgets ??= {
+      ...RISK_POLICIES[assignment.risk_tier],
+      first_business_result_deadline: null
+    };
+    delete assignment.budgets.independent_validation;
+    assignment.usage ??= { validation_rounds: 0, test_runs: 0, external_calls: 0 };
+    assignment.authority ??= null;
     if (assignment.integration) {
       const revision = assignment.integration.report_revision ??
         assignment.integration.validated_report_revision ?? assignment.worker_report_revision;
@@ -273,6 +315,10 @@ const migrateStoreUnlocked = (root) => {
   for (const entry of ledger.workers ?? []) entry.attention ??= null;
   ledger.pending_attention_count = (ledger.workers ?? [])
     .filter((entry) => entry.attention?.state === "pending").length;
+  ledger.pending_adjudication_count = rawJsonFiles(paths.reports)
+    .map((filePath) => readJson(filePath))
+    .filter((report) => ["needs_adjudication", "adjudicated"].includes(report.handoff?.status) &&
+      (report.handoff.status === "needs_adjudication" || report.handoff.next_action_required)).length;
   atomicWriteJson(paths.ledger, ledger);
 
   project.schema_version = SCHEMA_VERSION;
@@ -286,7 +332,7 @@ const requireStore = (root) => {
   if (!fs.existsSync(paths.project)) throw new Error(`Coordlane store not initialized: ${root}`);
   const project = readJson(paths.project);
   assertKnownSchemaVersion(project, "project");
-  if (project.schema_version === LEGACY_SCHEMA_VERSION) {
+  if (LEGACY_SCHEMA_VERSIONS.has(project.schema_version)) {
     withStoreLock(root, () => migrateStoreUnlocked(root));
   }
   // Only the project-led migration may consume legacy records. Normal state
@@ -327,6 +373,7 @@ export const initProject = (root, projectId, options = {}) => withStoreLock(root
     last_sweep_cursor: 0,
     unread_terminal_count: 0,
     pending_attention_count: 0,
+    pending_adjudication_count: 0,
     final_gate_passed: false,
     turn_gate: null,
     workers: []
@@ -350,6 +397,72 @@ export const statusSnapshot = (root) => ({
   ledger: ledgerFor(root),
   ownership: ownershipFor(root)
 });
+
+export const bootstrapProject = (root, projectId, options = {}) => {
+  const projectPath = path.join(path.resolve(root), "project.json");
+  if (!fs.existsSync(projectPath)) return { created: true, ...initProject(root, projectId, options) };
+  const snapshot = statusSnapshot(root);
+  if (snapshot.project.project_id !== projectId) {
+    throw new Error(`Coordlane store is already bound to project ${snapshot.project.project_id}`);
+  }
+  return { created: false, root: path.resolve(root), project_id: projectId };
+};
+
+export const recordHookReceipt = (root, input = {}) => withStoreLock(root, () => {
+  const paths = requireStore(root);
+  const receipt = {
+    schema_version: SCHEMA_VERSION,
+    project_id: projectFor(root).project_id,
+    hook: input.hook ?? "coordlane-hook",
+    observed_at: now()
+  };
+  atomicWriteJson(paths.hookReceipt, receipt);
+  return receipt;
+});
+
+export const doctor = (root, options = {}) => {
+  const resolved = path.resolve(root);
+  const projectPath = path.join(resolved, "project.json");
+  const repair = [];
+  if (!fs.existsSync(projectPath)) {
+    repair.push(`node bin/coordlane.mjs bootstrap ${JSON.stringify(resolved)} bootstrap.json`);
+    return {
+      health: "red",
+      enabled: false,
+      state_store: "missing",
+      hook: "unknown",
+      operator: fs.existsSync(options.operator_path ?? fileURLToPath(new URL("../bin/coordlane.mjs", import.meta.url))) ? "available" : "missing",
+      captain_binding: "missing",
+      worker_registration_count: 0,
+      unread_terminal_count: null,
+      pending_adjudication_count: null,
+      repair_commands: repair
+    };
+  }
+  try {
+    const snapshot = statusSnapshot(resolved);
+    const hook = fs.existsSync(path.join(resolved, "hook-receipt.json")) ? "observed" : "missing";
+    const binding = snapshot.project.captain_thread_id && snapshot.project.captain_host_id ? "bound" : "missing";
+    if (hook === "missing") repair.push("codex plugin install ./coordlane");
+    if (binding === "missing") repair.push(`node bin/coordlane.mjs bind-captain ${JSON.stringify(resolved)} captain.json`);
+    return {
+      health: hook === "observed" && binding === "bound" ? "green" : "red",
+      enabled: hook === "observed" && binding === "bound",
+      state_store: "ready",
+      hook,
+      operator: "available",
+      captain_binding: binding,
+      worker_registration_count: snapshot.registry.workers.filter((worker) => !worker.archived).length,
+      unread_terminal_count: snapshot.ledger.unread_terminal_count,
+      pending_adjudication_count: snapshot.ledger.pending_adjudication_count ?? 0,
+      repair_commands: repair
+    };
+  } catch (error) {
+    return { health: "red", enabled: false, state_store: "invalid", error: error.message, repair_commands: [
+      `node bin/coordlane.mjs doctor ${JSON.stringify(resolved)}`
+    ] };
+  }
+};
 
 export const bindCaptain = (root, input) => withStoreLock(root, () => {
   const paths = requireStore(root);
@@ -525,17 +638,94 @@ const listAssignments = (root) => {
     .map((name) => readJson(path.join(directory, name)));
 };
 
+const normalizeBudgets = (riskTier, input = {}) => {
+  if (!RISK_POLICIES[riskTier]) throw new Error(`Unknown risk_tier: ${riskTier}`);
+  const defaults = RISK_POLICIES[riskTier];
+  const budgets = {
+    max_validation_rounds: input.max_validation_rounds ?? defaults.max_validation_rounds,
+    max_test_runs: input.max_test_runs ?? defaults.max_test_runs,
+    max_external_calls: input.max_external_calls ?? defaults.max_external_calls,
+    first_business_result_deadline: input.first_business_result_deadline ?? null
+  };
+  for (const key of ["max_validation_rounds", "max_test_runs", "max_external_calls"]) {
+    if (!Number.isInteger(budgets[key]) || budgets[key] < 0) throw new Error(`Invalid hard budget: ${key}`);
+  }
+  if (budgets.first_business_result_deadline !== null &&
+    !Number.isFinite(Date.parse(budgets.first_business_result_deadline))) {
+    throw new Error("Invalid first_business_result_deadline");
+  }
+  return budgets;
+};
+
+const authorityPayload = (manifest) => ({
+  schema_version: manifest.schema_version,
+  authority_id: manifest.authority_id,
+  revision: manifest.revision,
+  active: manifest.active,
+  assignment_id: manifest.assignment_id,
+  worker_id: manifest.worker_id,
+  owned_resources: manifest.owned_resources,
+  forbidden_resources: manifest.forbidden_resources,
+  shared_entrypoints: manifest.shared_entrypoints,
+  stop_conditions: manifest.stop_conditions
+});
+
+export const authorityManifestDigest = (manifest) => sha256(authorityPayload(manifest));
+
+const assertAuthorityManifest = (manifest) => {
+  if (!manifest || typeof manifest !== "object" || manifest.schema_version !== SCHEMA_VERSION) {
+    throw new Error("Authority manifest must be a current machine-readable manifest");
+  }
+  if (manifest.active !== true) throw new Error("Authority manifest is not active");
+  for (const key of ["authority_id", "assignment_id", "worker_id"]) {
+    if (typeof manifest[key] !== "string" || !manifest[key]) throw new Error(`Authority manifest requires ${key}`);
+  }
+  for (const key of ["owned_resources", "forbidden_resources", "shared_entrypoints", "stop_conditions"]) {
+    if (!Array.isArray(manifest[key])) throw new Error(`Authority manifest requires ${key}`);
+  }
+  if (manifest.manifest_digest !== authorityManifestDigest(manifest)) {
+    throw new Error("Authority manifest digest mismatch");
+  }
+};
+
+const sameResourceSet = (left = [], right = []) =>
+  JSON.stringify([...left].map(normalizeResource).sort()) === JSON.stringify([...right].map(normalizeResource).sort());
+
+const assertAuthorityLocks = (input) => {
+  if (!input.authority_manifest) return null;
+  const manifest = input.authority_manifest;
+  assertAuthorityManifest(manifest);
+  if (input.assignment_id !== manifest.assignment_id || input.worker_id !== manifest.worker_id) {
+    throw new Error("Assignment identity conflicts with authority manifest");
+  }
+  for (const key of ["owned_resources", "forbidden_resources", "shared_entrypoints"]) {
+    if (input[key] !== undefined && !sameResourceSet(input[key], manifest[key])) {
+      throw new Error(`Captain-supplied ${key} conflicts with authority manifest`);
+    }
+  }
+  return manifest;
+};
+
 export const createAssignment = (root, input) => withStoreLock(root, () => {
   const project = projectFor(root);
+  const authority = assertAuthorityLocks(input);
   const worker = readWorker(root, input.worker_id);
   if (!worker || worker.archived) throw new Error(`Worker is unavailable: ${input.worker_id}`);
   if (readAssignment(root, input.assignment_id)) throw new Error(`Duplicate assignment_id: ${input.assignment_id}`);
-  for (const owned of input.owned_resources ?? []) {
-    const prohibited = [...(input.forbidden_resources ?? []), ...(input.shared_entrypoints ?? [])]
+  const ownedResources = authority?.owned_resources ?? input.owned_resources ?? [];
+  const forbiddenResources = authority?.forbidden_resources ?? input.forbidden_resources ?? [];
+  const sharedEntrypoints = authority?.shared_entrypoints ?? input.shared_entrypoints ?? [];
+  for (const owned of ownedResources) {
+    const prohibited = [...forbiddenResources, ...sharedEntrypoints]
       .find((resource) => resourcesOverlap(owned, resource));
     if (prohibited) {
       throw new Error(`Owned resource ${owned} overlaps forbidden or shared resource ${prohibited}`);
     }
+  }
+  const riskTier = input.risk_tier ?? "R1";
+  const budgets = normalizeBudgets(riskTier, input.budgets);
+  if (riskTier === "R0" && (input.execution_mode ?? "write") !== "read_only") {
+    throw new Error("R0 is limited to bounded read_only work");
   }
   const timestamp = now();
   const assignment = {
@@ -550,10 +740,23 @@ export const createAssignment = (root, input) => withStoreLock(root, () => {
     attempt_id: `${input.assignment_id}.r1`,
     attempt_number: 1,
     objective: input.objective,
+    business_goal: input.business_goal ?? input.objective,
+    first_value_action: input.first_value_action ?? "Produce the first acceptance-criterion result",
+    evidence_needed: input.evidence_needed ?? input.acceptance_criteria,
+    evidence_not_needed: input.evidence_not_needed ?? [],
+    risk_tier: riskTier,
+    budgets,
+    usage: { validation_rounds: 0, test_runs: 0, external_calls: 0 },
+    authority: authority ? {
+      authority_id: authority.authority_id,
+      revision: authority.revision,
+      manifest_digest: authority.manifest_digest,
+      stop_conditions: [...authority.stop_conditions]
+    } : null,
     acceptance_criteria: input.acceptance_criteria,
-    owned_resources: input.owned_resources,
-    forbidden_resources: input.forbidden_resources,
-    shared_entrypoints: input.shared_entrypoints ?? [],
+    owned_resources: ownedResources,
+    forbidden_resources: forbiddenResources,
+    shared_entrypoints: sharedEntrypoints,
     dependencies: input.dependencies ?? [],
     branch_policy: input.branch_policy,
     execution_mode: input.execution_mode ?? "write",
@@ -571,6 +774,51 @@ export const createAssignment = (root, input) => withStoreLock(root, () => {
   };
   atomicWriteJson(assignmentPath(root, assignment.assignment_id), assignment);
   return assignment;
+});
+
+export const createAssignmentFromAuthority = (root, input) => {
+  assertAuthorityManifest(input.authority_manifest);
+  return createAssignment(root, {
+    ...input,
+    assignment_id: input.authority_manifest.assignment_id,
+    worker_id: input.authority_manifest.worker_id,
+    owned_resources: input.authority_manifest.owned_resources,
+    forbidden_resources: input.authority_manifest.forbidden_resources,
+    shared_entrypoints: input.authority_manifest.shared_entrypoints
+  });
+};
+
+const assertUsageWithinBudget = (assignment) => {
+  const pairs = [
+    ["validation_rounds", "max_validation_rounds"],
+    ["test_runs", "max_test_runs"],
+    ["external_calls", "max_external_calls"]
+  ];
+  for (const [counter, maximum] of pairs) {
+    if (assignment.usage[counter] > assignment.budgets[maximum]) {
+      throw new Error(`Hard budget exceeded: ${maximum}`);
+    }
+  }
+  if (assignment.budgets.first_business_result_deadline &&
+    assignment.usage.external_calls === 0 && assignment.usage.test_runs === 0 &&
+    Date.now() > Date.parse(assignment.budgets.first_business_result_deadline)) {
+    throw new Error("First business result deadline exceeded; Captain decision required");
+  }
+};
+
+export const recordAssignmentUsage = (root, assignmentId, delta = {}) => withStoreLock(root, () => {
+  const assignment = readAssignment(root, assignmentId);
+  if (!assignment) throw new Error(`Unknown assignment_id: ${assignmentId}`);
+  const next = structuredClone(assignment);
+  for (const key of ["validation_rounds", "test_runs", "external_calls"]) {
+    const increment = delta[key] ?? 0;
+    if (!Number.isInteger(increment) || increment < 0) throw new Error(`Invalid usage increment: ${key}`);
+    next.usage[key] += increment;
+  }
+  assertUsageWithinBudget(next);
+  next.updated_at = now();
+  atomicWriteJson(assignmentPath(root, assignmentId), next);
+  return next;
 });
 
 export const recordExternalAssignment = (root, input) => withStoreLock(root, () => {
@@ -782,6 +1030,21 @@ const assertTerminalReportContent = (content) => {
     typeof content.secrets_exposure.details !== "string") {
     throw new Error("Secrets exposure statement is malformed");
   }
+  if (typeof content.business_outcome !== "string" || content.business_outcome.length === 0) {
+    throw new Error("Report requires business_outcome");
+  }
+  if (!Array.isArray(content.diagnostic_shape) || content.diagnostic_shape.some((item) =>
+    !item || typeof item.path !== "string" || !item.path ||
+    !["object", "array", "string", "number", "boolean", "null", "missing"].includes(item.type) ||
+    !Number.isInteger(item.count) || item.count < 0 ||
+    !["present", "missing"].includes(item.presence) || Object.keys(item).some((key) =>
+      !["path", "type", "count", "presence"].includes(key)))) {
+    throw new Error("Diagnostic shape may contain only path/type/count/presence metadata");
+  }
+  if (!content.coordination_cost || ["validation_rounds", "test_runs", "external_calls"].some((key) =>
+    !Number.isInteger(content.coordination_cost[key]) || content.coordination_cost[key] < 0)) {
+    throw new Error("Report requires trustworthy coordination cost counters");
+  }
   if (!TERMINAL_REPORT_STATUSES.has(content.status)) throw new Error("Report is not terminal");
   if (content.commit !== null && (typeof content.commit !== "string" || content.commit.length === 0)) {
     throw new Error("Commit must be a non-empty string or null");
@@ -852,6 +1115,11 @@ const assertReportScope = (root, assignment, content) => {
       throw new Error(`Reported external side effect was not authorized: ${effect}`);
     }
   }
+  for (const key of ["validation_rounds", "test_runs", "external_calls"]) {
+    if (content.coordination_cost[key] !== assignment.usage[key]) {
+      throw new Error(`Report coordination cost does not match operator usage: ${key}`);
+    }
+  }
 };
 
 const persistReportUnlocked = (root, input) => {
@@ -887,7 +1155,17 @@ const persistReportUnlocked = (root, input) => {
       validated_at: null,
       archived_at: null
     },
-    coordinator_validation: null
+    coordinator_validation: null,
+    handoff: {
+      status: "needs_adjudication",
+      adjudicated_at: null,
+      disposition: null,
+      next_action_required: null,
+      next_action_assignment_id: null,
+      next_action_dispatched_at: null,
+      deferred_reason: null,
+      deferred_at: null
+    }
   };
   atomicWriteJson(reportPath(root, input.worker_id, input.assignment_id, revision), report);
   transition(assignment, input.content.status, ASSIGNMENT_TRANSITIONS, "assignment");
@@ -953,11 +1231,24 @@ const countUnreadTerminal = (root, ledger = ledgerFor(root)) => {
     }).length;
 };
 
+const pendingTerminalHandoffs = (root) => reportFiles(root)
+  .map((filePath) => readJson(filePath))
+  .filter((report) => report.lifecycle.status !== "archived" && (
+    report.handoff?.status === "needs_adjudication" ||
+    (report.handoff?.status === "adjudicated" && report.handoff.next_action_required === true)
+  ));
+
+const updateAdjudicationCount = (root, ledger) => {
+  ledger.pending_adjudication_count = pendingTerminalHandoffs(root).length;
+  return ledger.pending_adjudication_count;
+};
+
 const invalidateFinalGate = (root, requestedFreshness = "stale") => {
   const paths = requireStore(root);
   const ledger = readJson(paths.ledger);
   ledger.unread_terminal_count = countUnreadTerminal(root, ledger);
   updateAttentionCount(ledger);
+  updateAdjudicationCount(root, ledger);
   ledger.final_gate_passed = false;
   ledger.freshness = requestedFreshness;
   atomicWriteJson(paths.ledger, ledger);
@@ -982,6 +1273,7 @@ export const beginTurn = (root, input = {}) => withStoreLock(root, () => {
   }));
   ledger.unread_terminal_count = countUnreadTerminal(root, ledger);
   updateAttentionCount(ledger);
+  updateAdjudicationCount(root, ledger);
   ledger.final_gate_passed = false;
   ledger.freshness = "stale";
   ledger.turn_gate = {
@@ -1152,14 +1444,23 @@ const CAPTAIN_DIRECT_WORK_TOOLS = new Set([
 ]);
 
 const COORDLANE_OPERATOR_COMMANDS = new Set([
+  "bootstrap",
+  "doctor",
+  "bind-captain",
   "create-worker",
   "create-assignment",
+  "derive-assignment",
   "dispatch",
   "record-delivery",
   "acknowledge",
   "start",
+  "record-usage",
   "terminal",
   "sweep",
+  "drain-status",
+  "adjudicate",
+  "dispatch-next",
+  "defer-next",
   "validate",
   "integrate",
   "close",
@@ -1679,6 +1980,7 @@ const fullSweepUnlocked = (root, options = {}) => {
   ledger.last_sweep_cursor = highWatermark;
   ledger.unread_terminal_count = countUnreadTerminal(root, ledger);
   updateAttentionCount(ledger);
+  updateAdjudicationCount(root, ledger);
   ledger.freshness = ledger.unread_terminal_count === 0 ? "fresh" : "stale";
   atomicWriteJson(paths.ledger, ledger);
   return {
@@ -1686,12 +1988,102 @@ const fullSweepUnlocked = (root, options = {}) => {
     observed_through: highWatermark,
     recovered,
     consumed,
+    pending_adjudications: pendingTerminalHandoffs(root).map((report) => ({
+      worker_id: report.worker_id,
+      assignment_id: report.assignment_id,
+      report_revision: report.report_revision,
+      report_digest: report.report_digest,
+      status: report.handoff.status
+    })),
     unchanged: consumed.length === 0
   };
 };
 
 export const fullSweep = (root, options = {}) =>
   withStoreLock(root, () => fullSweepUnlocked(root, options));
+
+const terminalReportForAdjudication = (root, assignmentId, reportRevision) => {
+  const assignment = readAssignment(root, assignmentId);
+  if (!assignment) throw new Error(`Unknown assignment_id: ${assignmentId}`);
+  const revision = reportRevision ?? assignment.worker_report_revision;
+  const report = readReport(root, assignment.worker_id, assignmentId, revision);
+  if (!report || !["consumed", "validated"].includes(report.lifecycle.status)) {
+    throw new Error("Terminal report must be consumed before adjudication");
+  }
+  return { assignment, report, revision };
+};
+
+export const adjudicateTerminal = (root, input) => withStoreLock(root, () => {
+  const { assignment, report, revision } = terminalReportForAdjudication(
+    root, input.assignment_id, input.report_revision
+  );
+  if (report.report_digest !== input.report_digest) throw new Error("Adjudication report digest mismatch");
+  if (report.handoff.status !== "needs_adjudication") throw new Error(`Cannot adjudicate from ${report.handoff.status}`);
+  if (!["accept", "revise", "reject", "await_decision"].includes(input.disposition)) {
+    throw new Error("Invalid terminal adjudication disposition");
+  }
+  if (typeof input.next_action_required !== "boolean") throw new Error("Adjudication requires next_action_required");
+  const updated = updateReport(root, assignment.worker_id, assignment.assignment_id, revision, (value) => {
+    value.handoff.status = "adjudicated";
+    value.handoff.adjudicated_at = now();
+    value.handoff.disposition = input.disposition;
+    value.handoff.next_action_required = input.next_action_required;
+    return value;
+  });
+  invalidateFinalGate(root);
+  return updated.handoff;
+});
+
+export const recordNextActionDispatched = (root, input) => withStoreLock(root, () => {
+  const { assignment, report, revision } = terminalReportForAdjudication(
+    root, input.assignment_id, input.report_revision
+  );
+  if (report.handoff.status !== "adjudicated" || report.handoff.next_action_required !== true) {
+    throw new Error("Next action can be dispatched only after an adjudication that requires it");
+  }
+  if (typeof input.next_action_assignment_id !== "string" || !input.next_action_assignment_id) {
+    throw new Error("next_action_assignment_id is required");
+  }
+  const next = readAssignment(root, input.next_action_assignment_id);
+  if (!next || next.status === "draft") throw new Error("Next action must exist and be dispatched");
+  const updated = updateReport(root, assignment.worker_id, assignment.assignment_id, revision, (value) => {
+    value.handoff.status = "next_action_dispatched";
+    value.handoff.next_action_assignment_id = next.assignment_id;
+    value.handoff.next_action_dispatched_at = now();
+    return value;
+  });
+  invalidateFinalGate(root);
+  return updated.handoff;
+});
+
+export const deferNextAction = (root, input) => withStoreLock(root, () => {
+  const { assignment, report, revision } = terminalReportForAdjudication(
+    root, input.assignment_id, input.report_revision
+  );
+  if (report.handoff.status !== "adjudicated") throw new Error(`Cannot defer from ${report.handoff.status}`);
+  if (typeof input.reason !== "string" || !input.reason.trim()) throw new Error("Explicit deferral requires a reason");
+  const updated = updateReport(root, assignment.worker_id, assignment.assignment_id, revision, (value) => {
+    value.handoff.status = "explicitly_deferred";
+    value.handoff.deferred_reason = input.reason.trim();
+    value.handoff.deferred_at = now();
+    return value;
+  });
+  invalidateFinalGate(root);
+  return updated.handoff;
+});
+
+export const drainStatus = (root, options = {}) => {
+  const sweep = fullSweep(root, options);
+  const snapshot = statusSnapshot(root);
+  return {
+    observed_through: sweep.observed_through,
+    consumed: sweep.consumed,
+    pending_adjudications: sweep.pending_adjudications,
+    unread_terminal_count: snapshot.ledger.unread_terminal_count,
+    pending_adjudication_count: snapshot.ledger.pending_adjudication_count,
+    freshness: snapshot.ledger.freshness
+  };
+};
 
 const preFinalGateUnlocked = (root, options = {}) => {
   if (options.scan_available === false) {
@@ -1711,6 +2103,7 @@ const preFinalGateUnlocked = (root, options = {}) => {
     const ledger = readJson(paths.ledger);
     ledger.unread_terminal_count = countUnreadTerminal(root, ledger);
     updateAttentionCount(ledger);
+    updateAdjudicationCount(root, ledger);
     const turnGateComplete = Boolean(
       ledger.turn_gate?.entry_sweep?.completed_at &&
       ledger.turn_gate?.pre_final_sweep?.completed_at &&
@@ -1725,6 +2118,7 @@ const preFinalGateUnlocked = (root, options = {}) => {
       turnGateComplete &&
       ledger.freshness === "fresh" &&
       ledger.unread_terminal_count === 0 &&
+      ledger.pending_adjudication_count === 0 &&
       ledger.last_sweep_cursor === ledger.event_sequence;
     atomicWriteJson(paths.ledger, ledger);
     return {
@@ -1732,6 +2126,7 @@ const preFinalGateUnlocked = (root, options = {}) => {
       freshness: ledger.freshness,
       final_gate_passed: ledger.final_gate_passed,
       unread_terminal_count: ledger.unread_terminal_count,
+      pending_adjudication_count: ledger.pending_adjudication_count,
       pending_attention_count: ledger.pending_attention_count
     };
   } catch (error) {
@@ -1755,6 +2150,7 @@ const assertFinalizableUnlocked = (root) => {
   const ledger = ledgerFor(root);
   const monitored = monitoredWorkers(root).length;
   const unread = countUnreadTerminal(root, ledger);
+  const pendingAdjudication = pendingTerminalHandoffs(root);
   const pending = pendingAttentions(ledger);
   const turnGateComplete = Boolean(
     ledger.turn_gate?.entry_sweep?.completed_at &&
@@ -1763,15 +2159,15 @@ const assertFinalizableUnlocked = (root) => {
     ledger.turn_gate.registry_changed !== true &&
     ledger.turn_gate.registry_revision === registryFor(root).registry_revision
   );
-  if (monitored === 0 && unread === 0) return { allowed: true, reason: "no_monitored_workers" };
+  if (monitored === 0 && unread === 0 && pendingAdjudication.length === 0) return { allowed: true, reason: "no_monitored_workers" };
   const unsurfaced = pending.filter((attention) =>
     attention.surfaced_turn_id !== ledger.turn_gate?.turn_id);
   if (!ledger.final_gate_passed || ledger.freshness !== "fresh" ||
-    !turnGateComplete || unread !== 0 || ledger.last_sweep_cursor !== ledger.event_sequence) {
+    !turnGateComplete || unread !== 0 || pendingAdjudication.length !== 0 || ledger.last_sweep_cursor !== ledger.event_sequence) {
     throw new Error(
       `Finalization refused: freshness=${ledger.freshness}, ` +
       `final_gate_passed=${ledger.final_gate_passed}, turn_gate_complete=${turnGateComplete}, ` +
-      `unread_terminal_count=${unread}`
+      `unread_terminal_count=${unread}, pending_adjudication_count=${pendingAdjudication.length}`
     );
   }
   if (unsurfaced.length > 0) {
@@ -1783,6 +2179,7 @@ const assertFinalizableUnlocked = (root) => {
     last_sweep_at: ledger.last_sweep_at,
     last_sweep_cursor: ledger.last_sweep_cursor,
     unread_terminal_count: unread,
+    pending_adjudication_count: pendingAdjudication.length,
     pending_attention_count: pending.length,
     final_gate_passed: true
   };
@@ -1850,6 +2247,19 @@ export const validateReport = (root, input) => withStoreLock(root, () => {
     assignment.worker_report_revision !== input.report_revision) {
     throw new Error("Validation identity does not match the active assignment revision");
   }
+  const validatorMode = input.validator_mode ?? "captain";
+  if (!['captain', 'independent'].includes(validatorMode)) throw new Error("Invalid validator_mode");
+  if (assignment.risk_tier === "R2" && validatorMode !== "independent") {
+    throw new Error("R2 requires independent validation");
+  }
+  const boundarySensitive = assignment.shared_entrypoints.length > 0 ||
+    assignment.external_side_effects.length > 0;
+  if (assignment.risk_tier === "R1" && boundarySensitive && validatorMode !== "independent") {
+    throw new Error("Boundary-sensitive R1 requires independent validation");
+  }
+  const nextUsage = structuredClone(assignment.usage);
+  nextUsage.validation_rounds += 1;
+  assertUsageWithinBudget({ ...assignment, usage: nextUsage });
   if (!Array.isArray(input.checks) || input.checks.length === 0 || input.checks.some((check) =>
     !check || typeof check.check !== "string" ||
     !["passed", "failed", "not_run"].includes(check.result) ||
@@ -1878,6 +2288,7 @@ export const validateReport = (root, input) => withStoreLock(root, () => {
     return value;
   });
   assignment.coordinator_checks = input.checks;
+  assignment.usage = nextUsage;
   if (disposition === "accepted") {
     transition(assignment, "validated", ASSIGNMENT_TRANSITIONS, "assignment");
     assignment.coordinator_disposition = "accepted";

@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "mission_id", "claims"],
   "properties": {
-    "schema_version": { "const": "1.1.0" },
+    "schema_version": { "const": "1.2.0" },
     "mission_id": { "$ref": "#/$defs/id" },
     "claims": {
       "type": "array",

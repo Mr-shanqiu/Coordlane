@@ -5,10 +5,13 @@
 
 Assignment / attempt / scope / ownership epoch:
 Objective:
+Business outcome:
 Workspace / branch / HEAD:
 Completed work:
 Commit (or reason for none):
 Worker verification, exact result, and subject HEAD:
+Coordination cost (validation rounds / test runs / external calls):
+Diagnostic shape (path / type / count / presence only; never values):
 Modified or owned files/resources:
 Shared overlap:
 Runtime switches, processes, external side effects, and cleanup:
@@ -17,6 +20,7 @@ Blockers:
 Decisions needed:
 Recommended next action:
 Report revision / digest:
+Terminal adjudication required / recommended disposition:
 No-more-edits commitment:
 ```
 

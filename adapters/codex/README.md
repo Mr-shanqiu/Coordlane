@@ -37,7 +37,7 @@ verified dispatch reads Git cleanliness and branch itself; its acknowledgement
 command evaluates a supplied current task snapshot; and its terminal command
 persists the report plus event in one locked producer operation.
 
-The local store schema is `1.1.0`. Opening a `1.0.0` store from Coordlane
+The local store schema is `1.2.0`. Opening a `1.0.0` or `1.1.0` store from Coordlane
 0.3.2 runs the bundled locked compatibility migration before status, sweep, or
 mutation. Only that project-led migration may consume legacy records. Normal
 reads validate all state record families, so a mixed, missing, unknown, or
@@ -128,7 +128,7 @@ at finalization.
 
 ## Approval attention
 
-Coordlane 0.3.3 observes `PermissionRequest` without returning allow or deny.
+Coordlane 0.3.4 observes `PermissionRequest` without returning allow or deny.
 The native Codex approval remains visible in the Crew task. The Hook stores no
 raw command or tool arguments: only stable identity, active Assignment,
 redacted reason, tool kind, and a digest. A pending request remains orthogonal

@@ -4,9 +4,9 @@
   "title": "Coordlane coordinator consumption ledger",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "project_id", "event_sequence", "freshness", "last_sweep_at", "last_sweep_cursor", "unread_terminal_count", "pending_attention_count", "final_gate_passed", "turn_gate", "workers"],
+  "required": ["schema_version", "project_id", "event_sequence", "freshness", "last_sweep_at", "last_sweep_cursor", "unread_terminal_count", "pending_attention_count", "pending_adjudication_count", "final_gate_passed", "turn_gate", "workers"],
   "properties": {
-    "schema_version": { "const": "1.1.0" },
+    "schema_version": { "const": "1.2.0" },
     "project_id": { "$ref": "#/$defs/id" },
     "event_sequence": { "type": "integer", "minimum": 0 },
     "freshness": { "enum": ["fresh", "stale", "unknown"] },
@@ -14,6 +14,7 @@
     "last_sweep_cursor": { "type": "integer", "minimum": 0 },
     "unread_terminal_count": { "type": "integer", "minimum": 0 },
     "pending_attention_count": { "type": "integer", "minimum": 0 },
+    "pending_adjudication_count": { "type": "integer", "minimum": 0 },
     "final_gate_passed": { "type": "boolean" },
     "turn_gate": {
       "oneOf": [

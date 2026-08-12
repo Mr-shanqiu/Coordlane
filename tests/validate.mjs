@@ -12,6 +12,7 @@ const ajv = new Ajv2020({
   validateFormats: false
 });
 const pairs = [
+  ["schemas/authority-manifest.schema.json", "tests/fixtures/authority-manifest.valid.json"],
   ["schemas/assignment.schema.json", "tests/fixtures/assignment.valid.json"],
   ["schemas/event.schema.json", "tests/fixtures/event.valid.json"],
   ["schemas/ledger.schema.json", "tests/fixtures/ledger.valid.json"],
@@ -68,6 +69,17 @@ const unresolvedCompletion = readJson("tests/fixtures/report.valid.json");
 unresolvedCompletion.content.shared_overlaps.push("src/app.js");
 if (validateReport(unresolvedCompletion)) {
   throw new Error("report schema accepted completed with unresolved overlap");
+}
+const leakingDiagnostic = readJson("tests/fixtures/report.valid.json");
+leakingDiagnostic.content.diagnostic_shape.push({
+  path: "response.token",
+  type: "string",
+  count: 1,
+  presence: "present",
+  value: "must-not-be-stored"
+});
+if (validateReport(leakingDiagnostic)) {
+  throw new Error("report schema accepted a diagnostic value outside path/type/count/presence");
 }
 
 const validateEvent = validators.get("schemas/event.schema.json");

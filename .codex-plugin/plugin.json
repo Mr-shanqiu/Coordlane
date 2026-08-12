@@ -1,6 +1,6 @@
 {
   "name": "coordlane",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Coordinate existing Codex tasks with a non-blocking Captain, durable handoffs, ownership gates, and bounded zero-time scans.",
   "author": {
     "name": "Mr-shanqiu",

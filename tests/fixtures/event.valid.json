@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.1.0",
+  "schema_version": "1.2.0",
   "event_id": "event-01",
   "idempotency_key": "20:assign-search-01:1",
   "sequence": 1,
