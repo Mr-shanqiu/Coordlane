@@ -2,6 +2,17 @@
 
 Last audited: 2026-08-12
 
+## Open P0
+
+- A Crew can currently send its pure-ID notification during commentary before
+  its durable terminal report exists. The Hook ignores the result but does not
+  prevent the host message, so the Captain can wake early and the invalid
+  attempt is not present in the Coordlane ledger. This is recorded in
+  [`issues/P0-premature-terminal-wake.md`](issues/P0-premature-terminal-wake.md).
+  Until corrected and live-tested, one-shot terminal delivery is not claimed
+  to be fully enforced; Turn-entry and Pre-final full sweeps remain the
+  authoritative recovery mechanism.
+
 ## Runnable now
 
 - Eight JSON Schemas and valid/invalid validation checks, including a
