@@ -1,4 +1,0 @@
-interface:
-  display_name: "Coordlane"
-  short_description: "Coordinate safe, traceable Codex task work"
-  default_prompt: "Use $coordlane to coordinate this Codex mission with stable task identity, assignment acknowledgement, explicit ownership, quiet full sweeps, independent validation, and traceable integration."

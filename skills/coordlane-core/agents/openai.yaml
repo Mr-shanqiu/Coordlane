@@ -1,0 +1,4 @@
+interface:
+  display_name: "Coordlane Core"
+  short_description: "Dispatch isolated Codex tasks and wake the Captain"
+  default_prompt: "Use $coordlane-core to register these Codex tasks and dispatch isolated work with explicit write paths."

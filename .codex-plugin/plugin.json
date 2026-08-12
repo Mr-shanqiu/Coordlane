@@ -1,7 +1,7 @@
 {
   "name": "coordlane",
-  "version": "0.3.4",
-  "description": "Coordinate existing Codex tasks with a non-blocking Captain, durable handoffs, ownership gates, and bounded zero-time scans.",
+  "version": "0.4.0",
+  "description": "Dispatch isolated Codex tasks and deliver one-shot Crew completion wakes without polling.",
   "author": {
     "name": "Mr-shanqiu",
     "url": "https://github.com/Mr-shanqiu"
@@ -9,15 +9,15 @@
   "homepage": "https://github.com/Mr-shanqiu/Coordlane",
   "repository": "https://github.com/Mr-shanqiu/Coordlane",
   "license": "MIT",
-  "keywords": ["codex", "multi-agent", "coordination", "handoff"],
+  "keywords": ["codex", "tasks", "coordination", "worktree", "notification"],
   "skills": "./skills/",
   "interface": {
-    "displayName": "Coordlane",
-    "shortDescription": "Keep parallel Codex work organized and auditable.",
-    "longDescription": "A quota-conscious reliability layer for existing Codex tasks: one responsive Captain, bounded Crew, durable quiet handoffs, independent validation, and traceable integration.",
+    "displayName": "Coordlane Core",
+    "shortDescription": "Dispatch isolated tasks and wake the Captain.",
+    "longDescription": "A small Codex coordination plugin for assignment delivery, linked-worktree isolation, Captain-owned write scopes, durable terminal reports, and one-shot completion wakes.",
     "developerName": "Mr-shanqiu",
     "category": "Productivity",
-    "capabilities": ["Coordination", "Lifecycle hooks", "Local state"],
-    "defaultPrompt": "Coordinate this project with Coordlane."
+    "capabilities": ["Task dispatch", "Lifecycle hooks", "Worktree isolation"],
+    "defaultPrompt": "Use Coordlane Core to register these tasks and dispatch isolated work with explicit write paths."
   }
 }

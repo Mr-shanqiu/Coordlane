@@ -1,242 +1,82 @@
-# Coordlane
+# Coordlane Core
 
-> A quota-conscious reliability layer for coordinating existing Codex tasks:
-> one responsive Captain, bounded Crew, quiet durable handoffs, and traceable
-> integration.
+Dispatch isolated Codex tasks and wake the Captain when a Crew result is ready.
 
-[简体中文](README.zh-CN.md)
+Coordlane Core intentionally does only four things:
 
-Coordlane is a local-first Codex plugin for complex
-work split across one Captain and multiple bounded Crew tasks. It keeps scope,
-stable identity, dependencies, file ownership, report evidence, validation,
-and integration state explicit—without turning raw worker output into user
-conversation noise.
+1. register one Captain and existing Crew task IDs;
+2. dispatch an assignment to a sleeping Crew;
+3. require a clean linked Git worktree and Captain-owned write paths; and
+4. persist the Crew's final result before allowing one wake message back to the Captain.
 
-The Captain is a responsive, non-blocking control plane. It communicates,
-coordinates, reviews evidence, and authorizes state transitions, but it does
-not edit project files, run builds or tests, wait on workers, or execute
-integration and release work. Validator and Dock Crew perform those bounded
-operations under explicit Assignments.
+Everything after delivery is the Captain's decision. Coordlane does not test,
+review, merge, deploy, schedule heartbeats, or run background polling.
 
-The current implementation phase targets **Codex desktop only**. Other platform
-directories are deferred research notes, not support claims.
+[完整中文说明](README.zh-CN.md)
 
-## Why Coordlane
+## Why a plugin
 
-Coordlane is deliberately narrower than an agent IDE, autonomous swarm, or
-general software-development methodology. It coordinates Codex tasks that the
-user already has, while keeping the main task available for conversation and
-decision-making.
+A prompt can suggest a workflow but cannot reliably enforce timing. Coordlane
+uses Codex lifecycle Hooks to block an early wake, capture the proposed final
+answer during `Stop`, and guarantee that a Hook defect never traps a task in a
+continuation loop.
 
-Its core advantage is the combination of these reliability boundaries:
+## Lifecycle
 
-- **A non-blocking Captain.** The user-facing task coordinates but never edits
-  project files, runs builds or tests, waits on workers, or performs integration.
-- **Identity-bound dispatch.** Stable task identity, `assignment_id`, origin,
-  and explicit ACK separate message delivery from acceptance of the right work.
-- **Safe parallelism before execution.** Exclusive ownership and dependency
-  preflight stop overlapping writes, stale baselines, and premature downstream
-  work before a Crew starts.
-- **Durable, quiet handoffs.** Revisioned reports and terminal events are bound
-  by digest before a one-shot Hook notification. Raw Crew output stays outside
-  the user conversation.
-- **Two active-turn completeness gates.** Registry-wide Turn-entry and Pre-final
-  zero-time sweeps recover changed Crew state even when a wake hint is missing;
-  the finalizer fails closed on stale or unknown freshness.
-- **Visible approval attention.** Codex `PermissionRequest` is recorded as a
-  redacted nonterminal signal and surfaced by the Captain while the native Crew
-  approval remains visible; Coordlane does not silently deny or auto-approve.
-- **Evidence before integration.** A separate Validator produces independent
-  evidence for R2 and boundary-sensitive R1 work; bounded R0 read-only work
-  uses Captain review without a mandatory Validator loop. One authorized Dock
-  Crew remains the only integration writer.
-- **Business progress before ceremony.** Assignments declare a risk tier, first
-  value action, needed and unneeded evidence, and enforce only validation, test,
-  and external-call counts that the local operator can actually record.
-- **No silent activation.** Loading the Skill is not enrollment. `doctor` shows
-  a red result with exact repair commands when the state store, Hook receipt,
-  Captain binding, or operator path is missing. Health is green only after
-  role-bound receipts cover both the Captain control-plane lifecycle and the
-  Crew terminal lifecycle; one role cannot make the other appear healthy.
-- **Reliability without recurring quota spend.** Coordlane has no heartbeat,
-  daemon, retry polling, or background AI patrol. It uses bounded incremental
-  snapshots and leaves a failed notification durable for the next Captain turn.
+```text
+Captain prepares assignment
+  -> send_message_to_thread wakes Crew
+  -> Crew works in its linked worktree
+  -> first Stop stores the final report and checks changed paths
+  -> Crew sends its worker ID once
+  -> send_message_to_thread wakes Captain
+  -> second Stop always lets Crew exit
+```
 
-This is not a claim of overall superiority. Projects such as
-[Agent Orchestrator](https://github.com/Untrivial-ai/agent-orchestrator),
-[Gas Town](https://github.com/gastownhall/gastown),
-[Superpowers](https://github.com/obra/superpowers),
-[Ruflo](https://github.com/ruvnet/ruflo), and
-[Warren](https://github.com/jayminwest/warren) offer broader user interfaces,
-agent/runtime coverage, continuous operation, autonomous workflows, or complete
-development methods. Choose them when those capabilities matter more than a
-small Codex-native coordination safety layer. See the dated
-[prior-art review](docs/research/prior-art.md) for the comparison and limits.
+If the wake fails, the durable report remains pending and is injected into the
+Captain's next user turn. No retry, timer, daemon, or model heartbeat is used.
 
-## What it fixes
+## Workspace boundary
 
-- Message delivery is separated from target acknowledgement.
-- Stable `thread_id + host_id` replaces unreliable title routing.
-- Assignment origin prevents Captain dispatch from overwriting user-direct
-  work.
-- Exclusive ownership and dependency preflight block unsafe parallel writes.
-- Terminal reports are revisioned, digest-bound, and durable before events.
-- A reviewed `Stop` Hook requires terminal evidence and a one-shot Captain
-  notification before a Crew can finish normally.
-- `PostToolUse(wait_threads)` requires structured zero-time task snapshots and
-  persists each Crew cursor; echoed IDs or error prose cannot satisfy coverage.
-- A targeted `PreToolUse` gate blocks common mutating paths until Turn-entry is
-  complete and invalidates an early Pre-final after later mutations.
-- The same gate permanently rejects direct project edits, interactive terminal
-  writes, and general shell commands from the Captain; only coordination and a
-  shell-control-free Coordlane operator invocation are allowlisted.
-- A bundled local operator derives Git preflight evidence and atomically
-  produces terminal report/event state without ad-hoc agent scripts.
-- An executable finalizer refuses an answer when the current turn lacks a fresh
-  registry-wide Pre-final sweep, terminal results remain unread, or a consumed
-  terminal result has not been adjudicated and closed with a dispatched or
-  explicitly deferred next action.
-- When a machine-readable authority manifest is explicitly supplied, its digest
-  binds file locks and stop conditions and conflicting supplied paths are
-  refused. Automatic extraction of active authority from project documents is
-  P1 deferred; assignments without a manifest remain Captain-supplied.
-- Validator evidence reviewed by the Captain is separate from worker-reported tests.
-- Explicit branch policy prevents cherry-pick and persistent-workstream history
-  from being mixed.
-- Integration records worker and integrated commits; completion never implies
-  release, deployment, or Mission completion.
+Each write assignment records:
 
-## Architecture
+- exact linked-worktree path;
+- branch and baseline HEAD captured at assignment time; and
+- literal repository-relative files or directory prefixes the Crew may write.
 
-Coordlane uses a non-blocking **Captain** as the user-facing coordinating brain
-and **Crew** as bounded execution tasks. A **Validator** produces independent
-evidence and a single-writer **Dock Crew** executes authorized integration. The
-**Chart** tracks Workstreams and dependencies; the **Logbook** stores structured evidence; **Dock** is controlled integration;
-**Launch** is an explicitly authorized migration, deployment, or release.
-**Radio** is only an optional transport hint.
+Coordlane rejects overlapping active write scopes, blocks known edit tools
+before an out-of-scope write, and checks committed, staged, unstaged, and
+untracked paths at terminal capture. Hooks are guardrails rather than an
+operating-system security boundary; the linked worktree limits collision impact.
 
-Read the [architecture](docs/architecture.md),
-[state machines](core/state-machines.md),
-[event protocol](core/events.md),
-[ownership rules](core/ownership.md), and
-[branch policy](core/branch-policy.md).
+## Local data
 
-## Current runnable surface
+Runtime data stays in `~/.codex/coordlane-core/` and is never part of this Git
+repository. It contains registries, assignments, terminal reports, delivery
+markers, and a rotating sanitized `logs/coordlane.jsonl`. No telemetry is sent.
 
-- one installable Codex plugin with a bundled [`coordlane` Skill](skills/coordlane/SKILL.md);
-- reviewed `PreToolUse`, `Stop`, and `PostToolUse` lifecycle [Hooks](hooks/hooks.json);
-- Captain, Crew, report, and project-map [`templates/`](templates/);
-- eight machine-readable [`schemas/`](schemas/), including authority manifests;
-- a Node.js standard-library [filesystem reference](reference/README.md);
-- a supported local state operator at [`bin/coordlane.mjs`](bin/coordlane.mjs);
-- a current-host [Codex desktop adapter](adapters/codex/README.md); and
-- 15 original failure scenarios plus field P0, worktree, receipt, identity,
-  quota, migration, and concurrent-writer regression checks.
+## Operator
 
-Coordlane ships no server, daemon, scheduled heartbeat, telemetry, transcript
-store, secret handler, automatic merge, deployment, migration, release, or
-runtime switch. Plugin Hooks do not run until the user reviews and trusts their
-exact definitions.
+```bash
+node bin/coordlane.mjs init demo <captain-thread-id>
+node bin/coordlane.mjs worker demo 30 <crew-thread-id>
+node bin/coordlane.mjs prepare demo 30 /absolute/worktree "Implement the task" src/ tests/example.test.js
+node bin/coordlane.mjs status demo
+```
 
-Turn scans provide active-turn consistency. Sleeping liveness uses a one-shot
-Crew notification after its durable event exists. If delivery fails, the event
-remains pending and the next Captain turn recovers it; Coordlane does not spend
-quota on recurring polling or describe degraded delivery as real-time.
+Send the `message` returned by `prepare` unchanged with Codex's native
+`send_message_to_thread` tool.
 
-Snapshot cost is bounded per turn. No active assignment means zero task-snapshot
-calls. With active Crew, Coordlane tries one batched `timeoutMs=0` snapshot and
-only asks for missing targets individually; unchanged results stay silent and
-full reports are not reread.
+## Trust and testing
 
-Coordlane does not claim to hard-enforce host token, CPU, wall-clock tool, or
-network budgets it cannot reliably observe. It does enforce the three counters
-its operator can record without background activity: validation rounds, test
-runs, and bounded external calls, plus a first-business-result deadline. These
-limits stop coordination loops; they do not add heartbeat, polling, or model
-calls. Enforcement is operator-recorded: external-call counting depends on the
-Crew faithfully using `record-usage` and is not an unbypassable host security
-boundary. Evidence caching remains P1 and is not claimed in 0.3.4.
+Codex requires users to review and trust changed plugin Hooks. Use a new task
+after installation, trust the Hooks, then run a disposable Captain/Crew wake
+test before relying on the plugin for project work.
 
-## Quick start
-
-```sh
-npm install
+```bash
 npm test
-python3 /path/to/skill-creator/scripts/quick_validate.py skills/coordlane
-python3 /path/to/plugin-creator/scripts/validate_plugin.py .
+python3 /Users/yue/.codex/skills/.system/skill-creator/scripts/quick_validate.py skills/coordlane-core
+python3 /Users/yue/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py .
 ```
 
-The plugin is the only installation unit. Do not install or copy its bundled
-Skill separately. During local development, validate the repository as above;
-after the plugin is published or added to an approved marketplace, install the
-`coordlane` plugin and review its Hooks. Start the coordinating task with
-[`templates/captain-prompt.md`](templates/captain-prompt.md), fill
-[`templates/project-map.md`](templates/project-map.md), and dispatch each formal
-Crew with a completed [`templates/crew-prompt.md`](templates/crew-prompt.md).
-
-Use the filesystem model locally:
-
-```sh
-node reference/coordlane.mjs init-repo . fictional-library
-STATE_DIR="$(node reference/coordlane.mjs state-path .)"
-node reference/coordlane.mjs bind-captain "$STATE_DIR" captain-thread local
-node reference/coordlane.mjs status "$STATE_DIR"
-```
-
-Before coordinating, run the read-only health check. Loading the Skill alone
-does not enable Coordlane:
-
-```sh
-node bin/coordlane.mjs doctor "$STATE_DIR"
-```
-
-Use `node bin/coordlane.mjs <command> "$STATE_DIR" <payload.json>` for
-registration, assignment, verified dispatch, acknowledgement, combined
-terminal report/event production, validation, integration recording, release,
-and status. See the [operator reference](reference/README.md).
-
-## Codex reliability rules
-
-Current Codex desktop task tools provide stable IDs, listing, reading,
-delivery, bounded waiting, cursors, and archival. Coordlane uses Level 2
-orchestration with reviewed lifecycle Hooks:
-
-1. dispatch with an `assignment_id`;
-2. verify target acknowledgement by reading the task;
-3. maintain one cursor per registered, non-archived Crew;
-4. let the Hook strictly parse actual non-blocking `wait_threads` snapshots at
-   turn entry and pre-final, matching each old cursor before persisting the new
-   one; a local event sweep alone cannot pass the finalizer;
-5. try one batch for cost control, then scan only targets absent from its result;
-6. consume only durable, matching report revisions; and
-7. require durable report/event before a one-shot pure numeric wake;
-8. use `PostToolUse` to record delivery and `Stop` to enforce the terminal
-   gate; and
-9. treat the wake as a hint, never truth or completeness.
-
-The Pre-final gate applies to every answer, including questions unrelated to
-Crew. Scan failure records `freshness=unknown`; Coordlane must not claim that
-task state is synchronized.
-
-## Project status and boundaries
-
-The protocol, reference store, schemas, and simulated failure tests are
-runnable locally. An authorized projectless Codex acceptance passed stable
-identity, create, delivery/ACK separation, first-change wait, per-task cursor
-drain, unchanged suppression, structured final, and archive. Shared worktree
-state and concurrent filesystem writers now have local regression coverage;
-live Hook trust and tool-response acceptance remain open. See the
-[acceptance record](docs/testing/codex-live-acceptance-2026-08-09.md) and
-[self-audit](docs/self-audit.md).
-
-No GitHub Release or external PR is created by this phase. Migration from early
-Agent Captain drafts is documented in
-[`docs/migration-from-agent-captain.md`](docs/migration-from-agent-captain.md).
-
-Prior art was reviewed for independent positioning; see
-[`docs/research/prior-art.md`](docs/research/prior-art.md). This is not legal or
-trademark advice.
-
-## License
-
-[MIT](LICENSE)
+MIT licensed.
