@@ -91,6 +91,69 @@ test("write guard and terminal inspection enforce Captain paths", () => {
   assert.ok(inspection.violations.includes("write_outside_scope:docs/readme.md"));
 });
 
+test("terminal inspection preserves literal unusual paths and checks both sides of renames", () => {
+  const state = fixture();
+  const initialFiles = [
+    "docs/中文 文件.md",
+    "docs/tab\tname.txt",
+    "docs/quote\"name.txt",
+    "docs/rename old.md"
+  ];
+  for (const relative of initialFiles) fs.writeFileSync(path.join(state.worker, relative), "before\n");
+  run(state.worker, ["git", "add", "--", ...initialFiles]);
+  run(state.worker, ["git", "commit", "-m", "add unusual path fixtures"]);
+
+  const renamed = "docs/重命名 new.md";
+  const { assignment } = prepareAssignment(state.root, "demo", {
+    worker_id: "30",
+    workspace: state.worker,
+    task: "change unusual paths",
+    write_paths: [...initialFiles.slice(0, 3), renamed]
+  });
+  for (const relative of initialFiles.slice(0, 3)) fs.appendFileSync(path.join(state.worker, relative), "after\n");
+  run(state.worker, ["git", "mv", "--", initialFiles[3], renamed]);
+
+  const inspection = inspectAssignmentWorkspace(assignment, state.worker);
+  assert.deepEqual(inspection.changed_files, [...initialFiles, renamed].sort());
+  assert.deepEqual(inspection.violations, [`write_outside_scope:${initialFiles[3]}`]);
+  assert.equal(inspection.violations.some((violation) => violation.includes("\\344\\")), false);
+  assert.equal(inspection.violations.some((violation) => violation.includes('"docs/')), false);
+});
+
+test("terminal inspection keeps newline-containing untracked paths as one record", () => {
+  const state = fixture();
+  const relative = "docs/line\nbreak.txt";
+  const { assignment } = prepareAssignment(state.root, "demo", {
+    worker_id: "30", workspace: state.worker, task: "write newline path", write_paths: [relative]
+  });
+  fs.writeFileSync(path.join(state.worker, relative), "literal newline\n");
+  const inspection = inspectAssignmentWorkspace(assignment, state.worker);
+  assert.deepEqual(inspection.changed_files, [relative]);
+  assert.deepEqual(inspection.violations, []);
+});
+
+test("explicit completion accepts an allowed UTF-8 path without Git quoting artifacts", () => {
+  const state = fixture();
+  const relative = "docs/中文授权文件.md";
+  fs.writeFileSync(path.join(state.worker, relative), "before\n");
+  run(state.worker, ["git", "add", "--", relative]);
+  run(state.worker, ["git", "commit", "-m", "add UTF-8 fixture"]);
+  const { assignment } = prepareAssignment(state.root, "demo", {
+    worker_id: "30", workspace: state.worker, task: "update UTF-8 file", write_paths: [relative]
+  });
+  fs.appendFileSync(path.join(state.worker, relative), "after\n");
+  run(state.worker, ["git", "add", "--", relative]);
+  run(state.worker, ["git", "commit", "-m", "update UTF-8 fixture"]);
+
+  const report = `[RESULT][30][completed]\nassignment_id: ${assignment.assignment_id}\nUTF-8 path accepted.`;
+  const completed = completeAssignment(state.root, "demo", assignment.assignment_id, {
+    cwd: state.worker, outcome: "completed", report
+  });
+  assert.equal(completed.scope_status, "ready");
+  assert.deepEqual(completed.violations, []);
+  assert.deepEqual(readInbox(state.root, "demo", "30").reports[0].changed_files, [relative]);
+});
+
 test("explicit complete persists before wake, releases the lock, and inbox consumes once", () => {
   const state = fixture();
   const { assignment } = prepareAssignment(state.root, "demo", {

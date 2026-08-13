@@ -1,6 +1,6 @@
 {
   "name": "coordlane",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "private": true,
   "description": "Minimal Codex task dispatch, worktree isolation, explicit completion, and result wake plugin",
   "license": "MIT",
