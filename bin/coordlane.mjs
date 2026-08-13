@@ -5,15 +5,18 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  acknowledgeApproval,
   cancelAssignment,
   completeAssignment,
   dataRoot,
+  decideApproval,
   hookBundleId,
   initProject,
   prepareAssignment,
   projectHealth,
   projectStatus,
   readInbox,
+  requestApproval,
   registerWorker
 } from "../lib/core.mjs";
 
@@ -29,6 +32,9 @@ const usage = () => {
     "  coordlane init <project_id> <captain_thread_id>",
     "  coordlane worker <project_id> <worker_id> <thread_id>",
     "  coordlane prepare <project_id> <worker_id> <workspace> <task> <write_path>...",
+    "  coordlane request-approval <project_id> <assignment_id>  # JSON request on stdin",
+    "  coordlane decide-approval <project_id> <approval_id> <approve|reject> <note>",
+    "  coordlane ack-approval <project_id> <approval_id>  # run inside assigned worktree",
     "  coordlane complete <project_id> <assignment_id> <completed|blocked|decision_needed>  # report on stdin",
     "  coordlane inbox <project_id> [worker_id]",
     "  coordlane cancel <project_id> <assignment_id> [reason]",
@@ -56,6 +62,13 @@ try {
       report: fs.readFileSync(0, "utf8"),
       cwd: process.cwd()
     }));
+  } else if (command === "request-approval" && args.length === 2) {
+    const input = JSON.parse(fs.readFileSync(0, "utf8"));
+    json(requestApproval(root, args[0], args[1], { ...input, cwd: process.cwd() }));
+  } else if (command === "decide-approval" && args.length >= 4) {
+    json(decideApproval(root, args[0], args[1], args[2], args.slice(3).join(" ")));
+  } else if (command === "ack-approval" && args.length === 2) {
+    json(acknowledgeApproval(root, args[0], args[1], { cwd: process.cwd() }));
   } else if (command === "inbox" && (args.length === 1 || args.length === 2)) {
     json(readInbox(root, args[0], args[1] || null));
   } else if (command === "cancel" && args.length >= 2) {

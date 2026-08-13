@@ -61,3 +61,52 @@ test("CLI complete and inbox work without Hook activity", () => {
   assert.equal(health.hooks.loaded, false);
   assert.equal(health.mode, "cli_required");
 });
+
+test("CLI routes a preflight approval request through Captain without completing the assignment", () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "coordlane-cli-approval-"));
+  const root = path.join(base, "state");
+  const repo = path.join(base, "repo");
+  const worker = path.join(base, "worker");
+  fs.mkdirSync(repo);
+  const git = (cwd, args) => {
+    const result = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+  };
+  git(repo, ["init", "-b", "main"]);
+  git(repo, ["config", "user.email", "coordlane@example.invalid"]);
+  git(repo, ["config", "user.name", "Coordlane Test"]);
+  fs.writeFileSync(path.join(repo, "probe.txt"), "one\n");
+  git(repo, ["add", "probe.txt"]);
+  git(repo, ["commit", "-m", "fixture"]);
+  git(repo, ["worktree", "add", "-b", "work/30", worker]);
+  invoke(root, ["init", "demo", "captain-thread-0001"]);
+  invoke(root, ["worker", "demo", "30", "worker-thread-0030"]);
+  const prepared = invoke(root, ["prepare", "demo", "30", worker, "clean fixture", "probe.txt"]);
+  assert.match(prepared.message, /request-approval/);
+  const request = {
+    action: "delete_temporary_directory",
+    target: "/private/tmp/coordlane-cli-probe",
+    reason: "Synthetic cleanup",
+    required_for_completion: false,
+    destructive: true,
+    fallback: "leave for OS cleanup",
+    command: "rm -rf /private/tmp/coordlane-cli-probe"
+  };
+  const requested = invoke(root, ["request-approval", "demo", prepared.assignment.assignment_id], {
+    cwd: worker,
+    input: JSON.stringify(request)
+  });
+  assert.equal(requested.state, "approval_pending");
+  const inbox = invoke(root, ["inbox", "demo", "30"]);
+  assert.equal(inbox.approval_count, 1);
+  assert.equal(inbox.report_count, 0);
+  const rejected = invoke(root, ["decide-approval", "demo", requested.approval_id, "reject", "Optional cleanup is not required"]);
+  assert.equal(rejected.decision, "rejected");
+  assert.equal(rejected.resume.thread_id, "worker-thread-0030");
+  assert.match(rejected.resume.message, /Skip it and continue/);
+  assert.equal(invoke(root, ["inbox", "demo", "30"]).approval_delivery_count, 1);
+  const acknowledged = invoke(root, ["ack-approval", "demo", requested.approval_id], { cwd: worker });
+  assert.equal(acknowledged.decision, "rejected");
+  assert.equal(invoke(root, ["inbox", "demo", "30"]).approval_delivery_count, 0);
+  assert.equal(invoke(root, ["status", "demo"]).assignments[0].state, "prepared");
+});

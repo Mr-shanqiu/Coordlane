@@ -4,16 +4,22 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  acceptApprovalDecisionPrompt,
   acceptAssignmentPrompt,
   bindingsForSession,
   checkWriteTarget,
+  claimApprovedOperation,
   consumeInjected,
   dataRoot,
+  injectApprovalDeliveries,
+  injectApprovalRequests,
   injectReports,
   hookBundleId,
   logEvent,
+  pendingApprovalRequests,
   persistTerminalReport,
   readAssignment,
+  recordApprovalWake,
   recordDispatch,
   recordHookActivity,
   recordWake,
@@ -45,6 +51,17 @@ const deny = (reason) => output({
 const toolTarget = (input) => input.tool_input?.threadId ?? input.tool_input?.thread_id;
 const toolMessage = (input) => input.tool_input?.message ?? input.tool_input?.prompt;
 const isSendMessageTool = (name) => /(?:^|__)send_message_to_thread$/.test(String(name || ""));
+const isShellTool = (name) => /(?:bash|exec_command|terminal)/i.test(String(name || ""));
+const shellCommand = (input) => String(input.tool_input?.command ?? input.tool_input?.cmd ?? input.tool_input?.input ?? "").trim();
+
+const sensitiveShellAction = (command) => {
+  const source = String(command || "");
+  if (/(^|[\n;&|])\s*(?:sudo\s+)?(?:rm|rmdir|unlink)(?:\s|$)/m.test(source) || /\bfind\b[^\n;&|]*\s-delete(?:\s|$)/m.test(source)) return "delete_files";
+  if (/\bgit\s+clean(?:\s|$)/m.test(source) || /\bgit\s+reset\s+--hard(?:\s|$)/m.test(source) ||
+      /\bgit\s+(?:checkout|restore)\s+--(?:\s|$)/m.test(source)) return "destructive_git";
+  if (/\bdocker\s+(?:system|container|image|volume)\s+prune(?:\s|$)/m.test(source)) return "destructive_cleanup";
+  return null;
+};
 
 const patchTargets = (command) => [...String(command || "").matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)]
   .map((match) => match[1].trim());
@@ -68,7 +85,7 @@ const guardCrewWrite = (root, binding, input) => {
   if (!assignment) return null;
   const toolName = input.tool_name || "";
   const toolInput = input.tool_input || {};
-  if (toolName === "Bash") {
+  if (isShellTool(toolName)) {
     const requestedCwd = toolInput.workdir || toolInput.cwd;
     if (requestedCwd) {
       const checked = checkWriteTarget({ ...assignment, write_paths: [""] }, requestedCwd, input.cwd);
@@ -88,6 +105,18 @@ const guardCrewWrite = (root, binding, input) => {
 
 const handleUserPrompt = (root, binding, input) => {
   if (binding.role === "crew") {
+    const approval = acceptApprovalDecisionPrompt(root, binding, input.prompt);
+    if (approval) {
+      output({
+        hookSpecificOutput: {
+          hookEventName: "UserPromptSubmit",
+          additionalContext: approval.decision.decision === "approved"
+            ? `Coordlane approval ${approval.request.approval_id} is approved only for the exact recorded operation. This does not bypass final Codex system approval.`
+            : `Coordlane approval ${approval.request.approval_id} is rejected. Do not invoke it; ${approval.request.required_for_completion ? "report the blocker or request revised scope" : "use the fallback and continue"}.`
+        }
+      });
+      return;
+    }
     const assignment = acceptAssignmentPrompt(root, binding, input.prompt);
     if (!assignment) return;
     output({
@@ -97,6 +126,7 @@ const handleUserPrompt = (root, binding, input) => {
           `Coordlane assignment ${assignment.assignment_id} is active.`,
           `Use only workspace ${assignment.workspace} on branch ${assignment.branch}.`,
           `Write only: ${assignment.write_paths.join(", ")}.`,
+          "Before invoking an approval-gated operation, use the Assignment's request-approval command, wake Captain once, and end the current turn without complete.",
           "Before final, use the assignment's explicit coordlane complete command with the full report on stdin.",
           "Only after complete succeeds, send exactly one pure worker-ID wake and then return the same report."
         ].join("\n")
@@ -104,8 +134,26 @@ const handleUserPrompt = (root, binding, input) => {
     });
     return;
   }
+  const approvalDeliveries = injectApprovalDeliveries(root, binding, input.prompt, input.turn_id);
+  const approvals = injectApprovalRequests(root, binding, input.prompt, input.turn_id);
   const reports = injectReports(root, binding, input.prompt, input.turn_id);
-  if (reports.length === 0) return;
+  if (reports.length === 0 && approvals.length === 0 && approvalDeliveries.length === 0) return;
+  const deliveryChunks = approvalDeliveries.map((decision) => [
+    `[COORDLANE APPROVAL DELIVERY PENDING][worker=${decision.worker_id}][assignment=${decision.assignment_id}][approval=${decision.approval_id}]`,
+    `Decision: ${decision.decision}`,
+    "Send this stored resume.message unchanged to the Crew; it remains pending until Crew acknowledges receipt."
+  ].join("\n"));
+  const approvalChunks = approvals.map((request) => [
+    `[COORDLANE APPROVAL][worker=${request.worker_id}][assignment=${request.assignment_id}][approval=${request.approval_id}]`,
+    `Action: ${request.action}`,
+    `Target: ${request.target}`,
+    `Reason: ${request.reason}`,
+    `Required for completion: ${request.required_for_completion}`,
+    `Destructive: ${request.destructive}`,
+    `Fallback: ${request.fallback || "none"}`,
+    `Command: ${request.command || "not supplied"}`,
+    "Decide with coordlane decide-approval and send its returned resume.message unchanged to the Crew."
+  ].join("\n"));
   const chunks = reports.map((report) => [
     `[COORDLANE READY][worker=${report.worker_id}][assignment=${report.assignment_id}][scope=${report.status}]`,
     report.violations.length > 0 ? `Workspace violations: ${report.violations.join(", ")}` : "Workspace check: passed",
@@ -114,7 +162,9 @@ const handleUserPrompt = (root, binding, input) => {
     report.assistant_message
   ].join("\n"));
   const context = [
-    "Coordlane has durable Crew result(s). Process them now and make your own project decision. Do not paste raw reports to the user.",
+    "Coordlane has durable Crew attention item(s). Process approval requests before they reach a system dialog, and make your own decision on terminal reports. Do not paste raw reports to the user.",
+    ...deliveryChunks,
+    ...approvalChunks,
     ...chunks
   ].join("\n\n").slice(0, 16000);
   output({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: context } });
@@ -132,7 +182,26 @@ const handlePreTool = (root, binding, input) => {
   }
   if (binding.role === "crew") {
     const reason = guardCrewWrite(root, binding, input);
-    if (reason) deny(reason);
+    if (reason) {
+      deny(reason);
+      return;
+    }
+    const command = isShellTool(input.tool_name) ? shellCommand(input) : "";
+    const action = sensitiveShellAction(command);
+    if (action) {
+      const assignment = runningAssignmentForWorker(root, binding.project_id, binding.worker_id);
+      if (assignment) {
+        const approval = claimApprovedOperation(root, assignment, command, input.tool_use_id);
+        if (!approval.allowed) {
+          deny([
+            `Coordlane blocked ${action} before it could open a system approval dialog (${approval.reason}).`,
+            "Do not invoke the operation yet. Use the Assignment's request-approval command with action, target, reason, required_for_completion, destructive, fallback, and this exact command.",
+            "After the request is durable, send your pure worker ID once to Captain and end this turn without calling complete."
+          ].join(" "));
+          return;
+        }
+      }
+    }
   }
 };
 
@@ -144,7 +213,11 @@ const handlePostTool = (root, binding, input) => {
       if (checked.coordinated) recordDispatch(root, binding.project_id, checked.assignment.assignment_id, input.tool_response);
     } else {
       const checked = validateWake(root, binding, toolTarget(input), toolMessage(input));
-      if (checked.coordinated) recordWake(root, binding.project_id, checked.assignment.assignment_id, input.tool_response);
+      if (checked.coordinated && checked.kind === "approval") {
+        recordApprovalWake(root, binding.project_id, checked.approval.approval_id, input.tool_response);
+      } else if (checked.coordinated) {
+        recordWake(root, binding.project_id, checked.assignment.assignment_id, input.tool_response);
+      }
     }
   } catch (error) {
     logEvent(root, "post_tool_record_failed", { session_id: input.session_id, reason: error.message });
@@ -162,6 +235,10 @@ const handleStop = (root, binding, input) => {
     return;
   }
   try {
+    if (pendingApprovalRequests(root, binding.project_id, binding.worker_id).length > 0) {
+      output({ continue: true, systemMessage: "Coordlane approval request is pending with Captain; this is not a terminal assignment result." });
+      return;
+    }
     const before = terminalSnapshot(root, binding);
     if (before?.report) {
       output({ continue: true });

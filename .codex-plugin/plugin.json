@@ -1,7 +1,7 @@
 {
   "name": "coordlane",
-  "version": "0.4.2",
-  "description": "Dispatch isolated Codex tasks and deliver one-shot Crew completion wakes without polling.",
+  "version": "0.4.3",
+  "description": "Dispatch isolated Codex tasks, route preflight approvals, and deliver one-shot Crew wakes without polling.",
   "author": {
     "name": "Mr-shanqiu",
     "url": "https://github.com/Mr-shanqiu"
@@ -13,11 +13,11 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Coordlane Core",
-    "shortDescription": "Dispatch isolated tasks and wake the Captain.",
-    "longDescription": "A small Codex coordination plugin for assignment delivery, linked-worktree isolation, Captain-owned write scopes, explicit durable completion, and one-shot result wakes without polling.",
+    "shortDescription": "Dispatch tasks, preflight approvals, and wake the Captain.",
+    "longDescription": "A small Codex coordination plugin for assignment delivery, linked-worktree isolation, Captain-owned write scopes, preflight approval routing, explicit durable completion, and one-shot wakes without polling.",
     "developerName": "Mr-shanqiu",
     "category": "Productivity",
-    "capabilities": ["Task dispatch", "Durable completion", "Worktree isolation"],
+    "capabilities": ["Task dispatch", "Preflight approvals", "Durable completion", "Worktree isolation"],
     "defaultPrompt": "Use Coordlane Core to register these tasks and dispatch isolated work with explicit write paths."
   }
 }

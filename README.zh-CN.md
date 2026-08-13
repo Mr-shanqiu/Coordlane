@@ -2,12 +2,13 @@
 
 把任务派给隔离的 Codex 分会话，并在结果真正可读取后唤醒主会话。
 
-Coordlane Core 只做四件事：
+Coordlane Core 只做五件事：
 
 1. 登记一个 Captain 和已有 Crew 的任务 ID；
 2. Captain 派发任务并唤醒休眠 Crew；
 3. 每个写任务使用干净的独立 Git worktree，由 Captain 分配可写路径；
-4. Crew 先持久化最终结果，再获准发送一次编号唤醒 Captain。
+4. 可能触发系统审批的操作先交给 Captain 裁定，再决定是否真正执行；
+5. Crew 先持久化最终结果，再获准发送一次编号唤醒 Captain。
 
 收到结果后的验证、合流、继续派发和用户沟通全部由 Captain 自己判断。
 Coordlane 不测试、不审查、不合并、不部署、不运行心跳，也不后台轮询。
@@ -18,6 +19,7 @@ Coordlane 不测试、不审查、不合并、不部署、不运行心跳，也�
 Captain 准备 Assignment
   -> send_message_to_thread 唤醒 Crew
   -> Crew 在独立 worktree 工作
+  -> 敏感操作：request-approval -> 唤醒 Captain -> decide-approval -> 恢复 Crew
   -> Crew 把完整报告通过 stdin 交给 complete
   -> 报告持久化并释放文件写锁
   -> Crew 只发送一次自身编号
@@ -28,6 +30,22 @@ Captain 准备 Assignment
 如果通知失败，报告继续保持 pending；Captain 下一次收到用户消息时只运行一次
 `inbox` 即可取回。不重试、不定时扫描、不启动后台服务，也不额外消耗休眠期间
 的模型额度。
+
+## 审批前置
+
+Crew 判断某项操作可能触发 Codex 系统审批时，不得先调用该操作。它应先通过
+`request-approval` 持久化操作类型、目标、理由、必要性、回退方案和不含秘密的
+精确命令，再发送一次纯编号唤醒 Captain，并结束当前回合但不执行 `complete`。
+
+Captain 通过正常 `inbox` 读取请求，使用 `decide-approval` 明确批准或拒绝，再将
+返回的 `resume.message` 原样发回 Crew。未裁定请求会保持可见；已裁定但尚未被
+Crew 通过 `ack-approval` 确认收件的决定也会保持可见。整个过程不会启动后台轮询
+或心跳。
+
+Hook 实际加载时，会在系统弹窗出现前拦截已识别的删除、破坏性 Git 和 prune
+命令，除非存在与命令完全一致且尚未使用的一次性 Captain 批准。Hook 未加载时，
+由 Assignment 和 Skill 明确要求 Crew 先申请。Captain 批准只是项目策略授权，
+不能绕过 Codex 最终系统审批。审批请求中禁止包含密钥、Token 或隐私数据。
 
 `complete` 和 `inbox` 是权威路径。Hook 实际加载时可以自动记录和注入；Hook
 没有加载时，显式命令仍然可用，不会让 Assignment 永久停在 `prepared`。
@@ -50,6 +68,7 @@ Crew 结束时检查已提交、暂存、未暂存和未跟踪文件。Hook 是�
 
 - Captain/Crew 登记；
 - Assignment；
+- 审批请求和 Captain 决定；
 - 终态报告；
 - 通知和消费标记；
 - 自动轮换的脱敏诊断日志 `logs/coordlane.jsonl`。
@@ -62,6 +81,9 @@ Crew 结束时检查已提交、暂存、未暂存和未跟踪文件。Hook 是�
 node bin/coordlane.mjs init demo <captain-thread-id>
 node bin/coordlane.mjs worker demo 30 <crew-thread-id>
 node bin/coordlane.mjs prepare demo 30 /absolute/worktree "完成指定任务" src/ tests/example.test.js
+node bin/coordlane.mjs request-approval demo <assignment-id> < approval.json
+node bin/coordlane.mjs decide-approval demo <approval-id> reject "可选清理，跳过"
+node bin/coordlane.mjs ack-approval demo <approval-id>
 node bin/coordlane.mjs complete demo <assignment-id> completed < report.txt
 node bin/coordlane.mjs inbox demo 30
 node bin/coordlane.mjs health demo

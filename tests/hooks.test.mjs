@@ -7,9 +7,11 @@ import test from "node:test";
 
 import {
   completeAssignment,
+  decideApproval,
   initProject,
   prepareAssignment,
   projectStatus,
+  requestApproval,
   registerWorker
 } from "../lib/core.mjs";
 
@@ -235,4 +237,67 @@ test("explicit CLI completion makes Stop non-blocking and wake immediately valid
     hook_event_name: "Stop", stop_hook_active: false, last_assistant_message: report
   });
   assert.deepEqual(stop, { continue: true });
+});
+
+test("approval-sensitive cleanup is intercepted before the host dialog and routed through Captain", () => {
+  const state = setup();
+  const assignment = state.prepared.assignment;
+  invoke(state, {
+    session_id: "worker-thread-0030", turn_id: "worker-turn-approval", cwd: state.worker,
+    hook_event_name: "UserPromptSubmit", prompt: state.prepared.message
+  });
+  const commandText = "rm -rf /private/tmp/coordlane-hook-probe";
+  const denied = invoke(state, {
+    session_id: "worker-thread-0030", turn_id: "worker-turn-approval", cwd: state.worker,
+    hook_event_name: "PreToolUse", tool_name: "exec_command", tool_use_id: "delete-before-approval",
+    tool_input: { cmd: commandText, workdir: state.worker }
+  });
+  assert.equal(denied.hookSpecificOutput.permissionDecision, "deny");
+  assert.match(denied.hookSpecificOutput.permissionDecisionReason, /before it could open a system approval dialog/);
+
+  const requested = requestApproval(state.root, "demo", assignment.assignment_id, {
+    cwd: state.worker,
+    action: "delete_temporary_directory",
+    target: "/private/tmp/coordlane-hook-probe",
+    reason: "Synthetic required cleanup",
+    required_for_completion: true,
+    destructive: true,
+    fallback: "none",
+    command: commandText
+  });
+  const stop = invoke(state, {
+    session_id: "worker-thread-0030", turn_id: "worker-turn-approval", cwd: state.worker,
+    hook_event_name: "Stop", stop_hook_active: false,
+    last_assistant_message: "Approval request sent to Captain."
+  });
+  assert.equal(stop.continue, true);
+  assert.match(stop.systemMessage, /not a terminal assignment result/);
+  assert.equal(projectStatus(state.root, "demo").assignments[0].state, "waiting_approval");
+
+  assert.equal(invoke(state, sendInput("worker-thread-0030", state.worker, "captain-thread-0001", "30")), null);
+  const captain = invoke(state, {
+    session_id: "captain-thread-0001", turn_id: "captain-turn-approval", cwd: state.repo,
+    hook_event_name: "UserPromptSubmit", prompt: "30"
+  });
+  assert.match(captain.hookSpecificOutput.additionalContext, new RegExp(requested.approval_id));
+  assert.match(captain.hookSpecificOutput.additionalContext, /delete_temporary_directory/);
+
+  const decision = decideApproval(state.root, "demo", requested.approval_id, "approve", "Synthetic exact target approved");
+  const crew = invoke(state, {
+    session_id: "worker-thread-0030", turn_id: "worker-turn-approved", cwd: state.worker,
+    hook_event_name: "UserPromptSubmit", prompt: decision.resume.message
+  });
+  assert.match(crew.hookSpecificOutput.additionalContext, /does not bypass final Codex system approval/);
+  const allowed = invoke(state, {
+    session_id: "worker-thread-0030", turn_id: "worker-turn-approved", cwd: state.worker,
+    hook_event_name: "PreToolUse", tool_name: "exec_command", tool_use_id: "delete-after-approval",
+    tool_input: { cmd: commandText, workdir: state.worker }
+  });
+  assert.equal(allowed, null);
+  const changed = invoke(state, {
+    session_id: "worker-thread-0030", turn_id: "worker-turn-approved", cwd: state.worker,
+    hook_event_name: "PreToolUse", tool_name: "exec_command", tool_use_id: "delete-changed-target",
+    tool_input: { cmd: `${commandText}-other`, workdir: state.worker }
+  });
+  assert.equal(changed.hookSpecificOutput.permissionDecision, "deny");
 });

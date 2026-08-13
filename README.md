@@ -2,12 +2,13 @@
 
 Dispatch isolated Codex tasks and wake the Captain when a Crew result is ready.
 
-Coordlane Core intentionally does only four things:
+Coordlane Core intentionally does only five things:
 
 1. register one Captain and existing Crew task IDs;
 2. dispatch an assignment to a sleeping Crew;
 3. require a clean linked Git worktree and Captain-owned write paths; and
-4. persist the Crew's final result before allowing one wake message back to the Captain.
+4. route approval-sensitive operations to the Captain before they reach a host dialog; and
+5. persist the Crew's final result before allowing one wake message back to the Captain.
 
 Everything after delivery is the Captain's decision. Coordlane does not test,
 review, merge, deploy, schedule heartbeats, or run background polling.
@@ -28,6 +29,7 @@ core workflow remains usable when they are absent.
 Captain prepares assignment
   -> send_message_to_thread wakes Crew
   -> Crew works in its linked worktree
+  -> approval-sensitive operation: request-approval -> wake Captain -> decide-approval -> resume Crew
   -> Crew runs complete with the final report on stdin
   -> report becomes durable and the write lock is released
   -> Crew sends its worker ID once
@@ -38,6 +40,22 @@ Captain prepares assignment
 If the wake fails, the durable report remains pending for the Captain's next
 single `inbox` call. No retry, timer, daemon, background poll, or model
 heartbeat is used.
+
+## Approval preflight
+
+Crew must request Captain approval before invoking an operation likely to open
+a Codex host approval dialog. The request is durable and non-terminal. Captain
+receives it through the same one-shot worker-ID wake and ordinary `inbox`, then
+records `approve` or `reject` and sends the returned resume message unchanged.
+An unresolved request remains visible until decided; a decided response remains
+visible until Crew acknowledges receipt. There is still no background polling.
+
+When Hooks are loaded, Coordlane intercepts recognized deletion, destructive
+Git, and prune commands before the host dialog unless they have an exact,
+one-use Captain approval. Without Hooks, the generated Assignment and Skill
+require the same preflight explicitly. Captain approval does not and must not
+bypass any final Codex system approval. Never place secrets in approval
+requests.
 
 ## Workspace boundary
 
@@ -55,8 +73,9 @@ operating-system security boundary; the linked worktree limits collision impact.
 ## Local data
 
 Runtime data stays in `~/.codex/coordlane-core/` and is never part of this Git
-repository. It contains registries, assignments, terminal reports, delivery
-markers, and a rotating sanitized `logs/coordlane.jsonl`. No telemetry is sent.
+repository. It contains registries, assignments, approval requests and
+decisions, terminal reports, delivery markers, and a rotating sanitized
+`logs/coordlane.jsonl`. No telemetry is sent.
 
 ## Operator
 
@@ -64,6 +83,9 @@ markers, and a rotating sanitized `logs/coordlane.jsonl`. No telemetry is sent.
 node bin/coordlane.mjs init demo <captain-thread-id>
 node bin/coordlane.mjs worker demo 30 <crew-thread-id>
 node bin/coordlane.mjs prepare demo 30 /absolute/worktree "Implement the task" src/ tests/example.test.js
+node bin/coordlane.mjs request-approval demo <assignment-id> < approval.json
+node bin/coordlane.mjs decide-approval demo <approval-id> reject "Optional cleanup; skip it"
+node bin/coordlane.mjs ack-approval demo <approval-id>
 node bin/coordlane.mjs complete demo <assignment-id> completed < report.txt
 node bin/coordlane.mjs inbox demo 30
 node bin/coordlane.mjs health demo

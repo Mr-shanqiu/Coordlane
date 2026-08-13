@@ -6,8 +6,11 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 import {
+  acknowledgeApproval,
+  claimApprovedOperation,
   checkWriteTarget,
   completeAssignment,
+  decideApproval,
   initProject,
   inspectAssignmentWorkspace,
   participantHookReadiness,
@@ -15,6 +18,7 @@ import {
   projectStatus,
   readInbox,
   recordHookActivity,
+  requestApproval,
   registerWorker
 } from "../lib/core.mjs";
 
@@ -152,6 +156,70 @@ test("explicit completion accepts an allowed UTF-8 path without Git quoting arti
   assert.equal(completed.scope_status, "ready");
   assert.deepEqual(completed.violations, []);
   assert.deepEqual(readInbox(state.root, "demo", "30").reports[0].changed_files, [relative]);
+});
+
+test("approval requests are durable, idempotent, visible until decided, and non-terminal", () => {
+  const state = fixture();
+  const { assignment } = prepareAssignment(state.root, "demo", {
+    worker_id: "30", workspace: state.worker, task: "run bounded work", write_paths: ["src/"]
+  });
+  const input = {
+    cwd: state.worker,
+    action: "delete_temporary_directory",
+    target: "/private/tmp/coordlane-example",
+    reason: "Optional cleanup after validation",
+    required_for_completion: false,
+    destructive: true,
+    fallback: "Leave it for operating-system cleanup",
+    command: "rm -rf /private/tmp/coordlane-example"
+  };
+  const requested = requestApproval(state.root, "demo", assignment.assignment_id, input);
+  const duplicate = requestApproval(state.root, "demo", assignment.assignment_id, input);
+  assert.equal(duplicate.approval_id, requested.approval_id);
+  assert.equal(projectStatus(state.root, "demo").assignments[0].state, "waiting_approval");
+
+  const inbox = readInbox(state.root, "demo", "30");
+  assert.equal(inbox.count, 1);
+  assert.equal(inbox.approval_count, 1);
+  assert.equal(inbox.report_count, 0);
+  assert.equal(inbox.approvals[0].command, input.command);
+  assert.equal(readInbox(state.root, "demo", "30").count, 1);
+  assert.equal(projectStatus(state.root, "demo").approvals[0].state, "seen");
+  assert.throws(() => completeAssignment(state.root, "demo", assignment.assignment_id, {
+    cwd: state.worker,
+    outcome: "completed",
+    report: `[RESULT][30][completed]\nassignment_id: ${assignment.assignment_id}\nShould not bypass approval.`
+  }), /unresolved approval request/);
+
+  const rejected = decideApproval(state.root, "demo", requested.approval_id, "reject", "Cleanup is optional; skip it");
+  assert.equal(rejected.decision, "rejected");
+  assert.match(rejected.resume.message, /Skip it and continue/i);
+  assert.equal(projectStatus(state.root, "demo").approvals[0].state, "rejected_awaiting_delivery");
+  assert.equal(projectStatus(state.root, "demo").assignments[0].state, "prepared");
+});
+
+test("an approved request is bound to one exact command and one use", () => {
+  const state = fixture();
+  const { assignment } = prepareAssignment(state.root, "demo", {
+    worker_id: "30", workspace: state.worker, task: "required cleanup", write_paths: ["src/"]
+  });
+  const command = "rm -rf /private/tmp/coordlane-required";
+  const requested = requestApproval(state.root, "demo", assignment.assignment_id, {
+    cwd: state.worker,
+    action: "delete_temporary_directory",
+    target: "/private/tmp/coordlane-required",
+    reason: "Required fixture cleanup",
+    required_for_completion: true,
+    destructive: true,
+    fallback: "none",
+    command
+  });
+  decideApproval(state.root, "demo", requested.approval_id, "approve", "Exact temporary target is authorized");
+  assert.match(projectStatus(state.root, "demo").approvals[0].state, /awaiting_delivery/);
+  acknowledgeApproval(state.root, "demo", requested.approval_id, { cwd: state.worker });
+  assert.equal(claimApprovedOperation(state.root, assignment, command, "tool-approve").allowed, true);
+  assert.match(claimApprovedOperation(state.root, assignment, command, "tool-repeat").reason, /already_used/);
+  assert.equal(claimApprovedOperation(state.root, assignment, `${command}-other`, "tool-other").allowed, false);
 });
 
 test("explicit complete persists before wake, releases the lock, and inbox consumes once", () => {
