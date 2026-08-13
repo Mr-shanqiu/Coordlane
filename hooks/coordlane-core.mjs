@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import {
   acceptAssignmentPrompt,
   bindingsForSession,
@@ -7,15 +10,21 @@ import {
   consumeInjected,
   dataRoot,
   injectReports,
+  hookBundleId,
   logEvent,
   persistTerminalReport,
+  readAssignment,
   recordDispatch,
+  recordHookActivity,
   recordWake,
   runningAssignmentForWorker,
   terminalSnapshot,
   validateDispatch,
   validateWake
 } from "../lib/core.mjs";
+
+const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const bundleId = hookBundleId(pluginRoot);
 
 const readInput = async () => {
   const chunks = [];
@@ -35,6 +44,7 @@ const deny = (reason) => output({
 
 const toolTarget = (input) => input.tool_input?.threadId ?? input.tool_input?.thread_id;
 const toolMessage = (input) => input.tool_input?.message ?? input.tool_input?.prompt;
+const isSendMessageTool = (name) => /(?:^|__)send_message_to_thread$/.test(String(name || ""));
 
 const patchTargets = (command) => [...String(command || "").matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)]
   .map((match) => match[1].trim());
@@ -87,7 +97,8 @@ const handleUserPrompt = (root, binding, input) => {
           `Coordlane assignment ${assignment.assignment_id} is active.`,
           `Use only workspace ${assignment.workspace} on branch ${assignment.branch}.`,
           `Write only: ${assignment.write_paths.join(", ")}.`,
-          "Return one clear final result. The Stop hook will save it and request exactly one wake message."
+          "Before final, use the assignment's explicit coordlane complete command with the full report on stdin.",
+          "Only after complete succeeds, send exactly one pure worker-ID wake and then return the same report."
         ].join("\n")
       }
     });
@@ -110,7 +121,7 @@ const handleUserPrompt = (root, binding, input) => {
 };
 
 const handlePreTool = (root, binding, input) => {
-  if (input.tool_name === "send_message_to_thread") {
+  if (isSendMessageTool(input.tool_name)) {
     try {
       if (binding.role === "captain") validateDispatch(root, binding, toolTarget(input), toolMessage(input));
       else validateWake(root, binding, toolTarget(input), toolMessage(input));
@@ -126,7 +137,7 @@ const handlePreTool = (root, binding, input) => {
 };
 
 const handlePostTool = (root, binding, input) => {
-  if (input.tool_name !== "send_message_to_thread") return;
+  if (!isSendMessageTool(input.tool_name)) return;
   try {
     if (binding.role === "captain") {
       const checked = validateDispatch(root, binding, toolTarget(input), toolMessage(input));
@@ -161,7 +172,7 @@ const handleStop = (root, binding, input) => {
       output({ continue: true });
       return;
     }
-    const assignment = runningAssignmentForWorker(root, binding.project_id, binding.worker_id);
+    const assignment = readAssignment(root, binding.project_id, report.assignment_id);
     output({
       decision: "block",
       reason: `Coordlane saved final result ${report.assignment_id}. As your only remaining action, call send_message_to_thread with threadId=${assignment.captain_thread_id} and message=${binding.worker_id}. Then immediately return the exact same final answer. If the send fails, do not retry; the next Stop will allow exit.`
@@ -180,6 +191,7 @@ const main = async () => {
     if (input.hook_event_name === "Stop") output({ continue: true });
     return;
   }
+  recordHookActivity(root, binding, { ...input, bundle_id: bundleId });
   if (input.hook_event_name === "UserPromptSubmit") handleUserPrompt(root, binding, input);
   else if (input.hook_event_name === "PreToolUse") handlePreTool(root, binding, input);
   else if (input.hook_event_name === "PostToolUse") handlePostTool(root, binding, input);

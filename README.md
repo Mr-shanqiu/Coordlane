@@ -16,10 +16,11 @@ review, merge, deploy, schedule heartbeats, or run background polling.
 
 ## Why a plugin
 
-A prompt can suggest a workflow but cannot reliably enforce timing. Coordlane
-uses Codex lifecycle Hooks to block an early wake, capture the proposed final
-answer during `Stop`, and guarantee that a Hook defect never traps a task in a
-continuation loop.
+A prompt can suggest a workflow but cannot reliably enforce timing. Coordlane's
+authoritative path is therefore explicit: `complete` durably stores the final
+report before a wake, and `inbox` reads it once at the Captain. Codex lifecycle
+Hooks add automation and diagnostics when the host actually loads them; the
+core workflow remains usable when they are absent.
 
 ## Lifecycle
 
@@ -27,14 +28,16 @@ continuation loop.
 Captain prepares assignment
   -> send_message_to_thread wakes Crew
   -> Crew works in its linked worktree
-  -> first Stop stores the final report and checks changed paths
+  -> Crew runs complete with the final report on stdin
+  -> report becomes durable and the write lock is released
   -> Crew sends its worker ID once
   -> send_message_to_thread wakes Captain
-  -> second Stop always lets Crew exit
+  -> Captain runs inbox once and decides the next action
 ```
 
-If the wake fails, the durable report remains pending and is injected into the
-Captain's next user turn. No retry, timer, daemon, or model heartbeat is used.
+If the wake fails, the durable report remains pending for the Captain's next
+single `inbox` call. No retry, timer, daemon, background poll, or model
+heartbeat is used.
 
 ## Workspace boundary
 
@@ -61,19 +64,28 @@ markers, and a rotating sanitized `logs/coordlane.jsonl`. No telemetry is sent.
 node bin/coordlane.mjs init demo <captain-thread-id>
 node bin/coordlane.mjs worker demo 30 <crew-thread-id>
 node bin/coordlane.mjs prepare demo 30 /absolute/worktree "Implement the task" src/ tests/example.test.js
+node bin/coordlane.mjs complete demo <assignment-id> completed < report.txt
+node bin/coordlane.mjs inbox demo 30
+node bin/coordlane.mjs health demo
 node bin/coordlane.mjs status demo
 ```
 
 Send the `message` returned by `prepare` unchanged with Codex's native
 `send_message_to_thread` tool.
 
+`health` reports Hook bundle/configuration state separately from observed Hook
+execution. Only `hooks.loaded=true` proves that every registered task has fired
+a Hook. Otherwise Coordlane returns `mode=cli_required`; use `complete` and
+`inbox` and do not claim automatic lifecycle coverage.
+
 ## Trust and testing
 
 Codex requires users to review and trust changed plugin Hooks. After installing
 or updating Coordlane, fully restart Codex so the host reloads the Hook bundle.
 Then use a new task, trust the Hooks, and run a disposable Captain/Crew wake
-test before relying on the plugin for project work. Seeing the Skill in a task
-does not by itself prove that the lifecycle Hooks were loaded.
+test before relying on Hook automation. Seeing the Skill in a task does not by
+itself prove that the lifecycle Hooks were loaded. Explicit `complete` and
+`inbox` remain the reliable fallback.
 
 ```bash
 npm test

@@ -7,10 +7,14 @@ import test from "node:test";
 
 import {
   checkWriteTarget,
+  completeAssignment,
   initProject,
   inspectAssignmentWorkspace,
+  participantHookReadiness,
   prepareAssignment,
   projectStatus,
+  readInbox,
+  recordHookActivity,
   registerWorker
 } from "../lib/core.mjs";
 
@@ -85,4 +89,54 @@ test("write guard and terminal inspection enforce Captain paths", () => {
   const inspection = inspectAssignmentWorkspace(assignment, state.worker);
   assert.deepEqual(inspection.changed_files, ["docs/readme.md", "src/app.js"]);
   assert.ok(inspection.violations.includes("write_outside_scope:docs/readme.md"));
+});
+
+test("explicit complete persists before wake, releases the lock, and inbox consumes once", () => {
+  const state = fixture();
+  const { assignment } = prepareAssignment(state.root, "demo", {
+    worker_id: "30", workspace: state.worker, task: "change app", write_paths: ["src/"]
+  });
+  fs.writeFileSync(path.join(state.worker, "src", "app.js"), "export const value = 3;\n");
+  const report = `[RESULT][30][completed]\nassignment_id: ${assignment.assignment_id}\nExplicit completion works.`;
+  const completed = completeAssignment(state.root, "demo", assignment.assignment_id, {
+    cwd: state.worker, outcome: "completed", report
+  });
+  assert.equal(completed.lock_released, true);
+  assert.equal(completed.state, "report_pending");
+  assert.deepEqual(completed.wake, { thread_id: "captain-thread-0001", message: "30" });
+  assert.equal(projectStatus(state.root, "demo").assignments[0].state, "report_pending");
+
+  const next = prepareAssignment(state.root, "demo", {
+    worker_id: "40", workspace: state.workerTwo, task: "take released scope", write_paths: ["src/"]
+  });
+  assert.equal(next.assignment.worker_id, "40");
+
+  const inbox = readInbox(state.root, "demo", "30");
+  assert.equal(inbox.count, 1);
+  assert.equal(inbox.reports[0].assistant_message, report);
+  assert.equal(projectStatus(state.root, "demo").assignments.find((item) => item.worker_id === "30").state, "completed");
+  assert.equal(readInbox(state.root, "demo", "30").count, 0);
+
+  assert.equal(completeAssignment(state.root, "demo", assignment.assignment_id, {
+    cwd: state.worker, outcome: "completed", report
+  }).state, "completed");
+  assert.throws(() => completeAssignment(state.root, "demo", assignment.assignment_id, {
+    cwd: state.worker, outcome: "blocked", report: "different"
+  }), /different terminal report/);
+});
+
+test("Hook readiness is false until both registered roles actually fire", () => {
+  const state = fixture();
+  const bundleId = "sha256:current";
+  assert.equal(participantHookReadiness(state.root, "demo", "30", bundleId).automatic_ready, false);
+  const captain = { role: "captain", project_id: "demo" };
+  const crew = { role: "crew", project_id: "demo", worker_id: "30" };
+  recordHookActivity(state.root, captain, { session_id: "captain-thread-0001", hook_event_name: "UserPromptSubmit", bundle_id: bundleId });
+  recordHookActivity(state.root, crew, { session_id: "worker-thread-0030", hook_event_name: "Stop", bundle_id: "sha256:stale" });
+  assert.equal(participantHookReadiness(state.root, "demo", "30", bundleId).automatic_ready, false);
+  recordHookActivity(state.root, crew, { session_id: "worker-thread-0030", hook_event_name: "Stop", bundle_id: bundleId });
+  const ready = participantHookReadiness(state.root, "demo", "30", bundleId);
+  assert.equal(ready.automatic_ready, true);
+  assert.equal(ready.captain.last_event, "user_prompt_submit");
+  assert.equal(ready.crew.last_event, "stop");
 });

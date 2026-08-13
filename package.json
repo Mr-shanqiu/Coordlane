@@ -1,8 +1,8 @@
 {
   "name": "coordlane",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
-  "description": "Minimal Codex task dispatch, worktree isolation, and completion wake plugin",
+  "description": "Minimal Codex task dispatch, worktree isolation, explicit completion, and result wake plugin",
   "license": "MIT",
   "type": "module",
   "scripts": {

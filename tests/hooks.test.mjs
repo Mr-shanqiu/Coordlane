@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 import {
+  completeAssignment,
   initProject,
   prepareAssignment,
   projectStatus,
@@ -60,7 +61,7 @@ const sendInput = (sessionId, cwd, threadId, message, extra = {}) => ({
   turn_id: extra.turn_id || "turn-0001",
   cwd,
   hook_event_name: extra.event || "PreToolUse",
-  tool_name: "send_message_to_thread",
+  tool_name: extra.tool_name || "send_message_to_thread",
   tool_use_id: extra.tool_use_id || "tool-0001",
   tool_input: { threadId, message },
   ...(extra.response === undefined ? {} : { tool_response: extra.response })
@@ -71,9 +72,11 @@ test("dispatch, durable report, one-shot wake, and Captain consumption", () => {
   const assignment = state.prepared.assignment;
   const message = state.prepared.message;
 
-  assert.equal(invoke(state, sendInput("captain-thread-0001", state.repo, "worker-thread-0030", message)), null);
+  assert.equal(invoke(state, sendInput("captain-thread-0001", state.repo, "worker-thread-0030", message, {
+    tool_name: "codex_app__send_message_to_thread"
+  })), null);
   invoke(state, sendInput("captain-thread-0001", state.repo, "worker-thread-0030", message, {
-    event: "PostToolUse", response: { delivery_id: "dispatch-1" }
+    event: "PostToolUse", response: { delivery_id: "dispatch-1" }, tool_name: "codex_app__send_message_to_thread"
   }));
 
   const start = invoke(state, {
@@ -134,7 +137,7 @@ test("dispatch, durable report, one-shot wake, and Captain consumption", () => {
     hook_event_name: "Stop", stop_hook_active: false, last_assistant_message: "Processed result"
   });
   assert.equal(captainStop.continue, true);
-  assert.equal(projectStatus(state.root, "demo").assignments[0].state, "consumed");
+  assert.equal(projectStatus(state.root, "demo").assignments[0].state, "completed");
 });
 
 test("a failed wake is recovered on the Captain's next ordinary turn without polling", () => {
@@ -217,4 +220,19 @@ test("terminal capture reports shell-created out-of-scope files and logs no repo
   assert.match(captain.hookSpecificOutput.additionalContext, /write_outside_scope:docs\/note.md/);
   const log = fs.readFileSync(path.join(state.root, "logs", "coordlane.jsonl"), "utf8");
   assert.doesNotMatch(log, new RegExp(privateReportText));
+});
+
+test("explicit CLI completion makes Stop non-blocking and wake immediately valid", () => {
+  const state = setup();
+  const assignment = state.prepared.assignment;
+  const report = `[RESULT][30][completed]\nassignment_id: ${assignment.assignment_id}\nDurable before wake.`;
+  completeAssignment(state.root, "demo", assignment.assignment_id, {
+    cwd: state.worker, outcome: "completed", report
+  });
+  assert.equal(invoke(state, sendInput("worker-thread-0030", state.worker, "captain-thread-0001", "30")), null);
+  const stop = invoke(state, {
+    session_id: "worker-thread-0030", turn_id: "worker-turn-explicit", cwd: state.worker,
+    hook_event_name: "Stop", stop_hook_active: false, last_assistant_message: report
+  });
+  assert.deepEqual(stop, { continue: true });
 });

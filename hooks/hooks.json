@@ -1,5 +1,5 @@
 {
-  "description": "Dispatch isolated Crew work and deliver one-shot terminal wake messages without polling.",
+  "description": "Observe isolated Crew dispatch and durable completion without background polling.",
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -28,7 +28,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "^send_message_to_thread$",
+        "matcher": ".*send_message_to_thread$",
         "hooks": [
           {
             "type": "command",
